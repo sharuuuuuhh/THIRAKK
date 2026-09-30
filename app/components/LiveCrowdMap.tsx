@@ -1,9 +1,8 @@
 'use client'
 
 import React, { useEffect, useRef, useState } from 'react'
-import type { Station, StretchCrowd, CrowdLevel } from '@/lib/types'
-import { CROWD_COLORS, NO_DATA_COLOR, CROWD_LABELS } from '@/lib/types'
-import { Info, Layers, Navigation, ZoomIn, ZoomOut, AlertCircle, Train } from 'lucide-react'
+import type { Station, StretchCrowd } from '@/lib/types'
+import { CROWD_COLORS, NO_DATA_COLOR } from '@/lib/types'
 
 interface LiveCrowdMapProps {
   stations: Station[]
@@ -34,29 +33,23 @@ export default function LiveCrowdMap({
     async function initMap() {
       if (!mapContainerRef.current || mapInstanceRef.current) return
 
-      // Dynamically import leaflet in browser
       const L = (await import('leaflet')).default
 
       if (!isMounted || !mapContainerRef.current) return
 
-      // Default center around Central Kerala
       const defaultCenter: [number, number] = [10.5, 76.2]
       const map = L.map(mapContainerRef.current, {
         center: defaultCenter,
         zoom: 8,
-        zoomControl: false,
+        zoomControl: true,
         attributionControl: false,
       })
 
-      // Modern clean OpenStreetMap tiles
+      // Clean OpenStreetMap tiles
       L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
         maxZoom: 18,
         subdomains: 'abcd',
-        attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
       }).addTo(map)
-
-      // Add custom zoom controls at top-right
-      L.control.zoom({ position: 'topright' }).addTo(map)
 
       mapInstanceRef.current = map
       setMapLoaded(true)
@@ -73,7 +66,7 @@ export default function LiveCrowdMap({
     }
   }, [])
 
-  // Draw or update polylines and station markers whenever stations / stretches change
+  // Draw or update polylines and station markers
   useEffect(() => {
     if (!mapLoaded || !mapInstanceRef.current) return
 
@@ -106,43 +99,31 @@ export default function LiveCrowdMap({
 
         const color = stretch.level ? CROWD_COLORS[stretch.level] : NO_DATA_COLOR
 
-        // Outer glow/casing line for better contrast
+        // Outer crisp casing line
         const backgroundLine = L.polyline([fromCoord, toCoord], {
-          color: isSelected ? '#1e293b' : '#ffffff',
-          weight: isSelected ? 12 : 8,
-          opacity: 0.9,
-          lineCap: 'round',
-          lineJoin: 'round',
+          color: isSelected ? '#0f172a' : '#ffffff',
+          weight: isSelected ? 10 : 7,
+          opacity: 1,
         }).addTo(map)
 
         // Main colored crowd level line
         const mainLine = L.polyline([fromCoord, toCoord], {
           color: color,
-          weight: isSelected ? 7 : 5,
+          weight: isSelected ? 6 : 4,
           opacity: 1,
-          dashArray: stretch.level ? undefined : '6, 8', // Dashed if no recent data (grey)
-          lineCap: 'round',
-          lineJoin: 'round',
+          dashArray: stretch.level ? undefined : '5, 5',
         }).addTo(map)
 
-        // Interactive hit area (invisible thick line for easy tapping on touchscreens)
+        // Interactive hit area
         const hitArea = L.polyline([fromCoord, toCoord], {
           color: 'transparent',
-          weight: 28,
+          weight: 24,
           opacity: 0.01,
           interactive: true,
         }).addTo(map)
 
         hitArea.on('click', () => {
           onSelectStretch(stretch)
-        })
-
-        hitArea.on('mouseover', () => {
-          mainLine.setStyle({ weight: isSelected ? 9 : 7 })
-        })
-
-        hitArea.on('mouseout', () => {
-          mainLine.setStyle({ weight: isSelected ? 7 : 5 })
         })
 
         polylinesRef.current[stretchKey] = { backgroundLine, mainLine, hitArea }
@@ -154,14 +135,13 @@ export default function LiveCrowdMap({
         const coord: [number, number] = [st.lat, st.lng]
         bounds.extend(coord)
 
-        // Custom HTML marker
         const iconHtml = `
-          <div class="relative flex items-center justify-center group cursor-pointer">
-            <div class="h-4 w-4 rounded-full border-2 border-white shadow-md transition-transform ${
-              isTerminal ? 'bg-slate-900 scale-125 ring-2 ring-slate-400' : 'bg-slate-700 hover:scale-125'
+          <div class="relative flex items-center justify-center">
+            <div class="h-3.5 w-3.5 rounded-full border-2 border-white ${
+              isTerminal ? 'bg-slate-900' : 'bg-slate-700'
             }"></div>
-            <div class="absolute bottom-5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md bg-slate-900/90 backdrop-blur-xs px-2 py-0.5 text-[11px] font-semibold text-white shadow-sm pointer-events-none transition-all">
-              ${st.name} ${st.name_ml ? `<span class="text-slate-300 text-[9px]">(${st.name_ml})</span>` : ''}
+            <div class="absolute bottom-4 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-slate-300 bg-white px-1.5 py-0.5 text-[10px] font-bold text-slate-800">
+              ${st.name}
             </div>
           </div>
         `
@@ -169,20 +149,18 @@ export default function LiveCrowdMap({
         const customIcon = L.divIcon({
           html: iconHtml,
           className: 'custom-station-marker',
-          iconSize: [20, 20],
-          iconAnchor: [10, 10],
+          iconSize: [16, 16],
+          iconAnchor: [8, 8],
         })
 
         const marker = L.marker(coord, { icon: customIcon }).addTo(map)
         markersRef.current.push(marker)
       })
 
-      // Fit bounds with padding if we have valid coordinates
       if (bounds.isValid()) {
         map.fitBounds(bounds, {
-          padding: [45, 45],
+          padding: [30, 30],
           maxZoom: 12,
-          animate: true,
         })
       }
     }
@@ -191,50 +169,38 @@ export default function LiveCrowdMap({
   }, [mapLoaded, stations, stretches, selectedStretch])
 
   return (
-    <div className="relative h-full w-full overflow-hidden rounded-2xl border border-slate-200 bg-slate-100 shadow-inner">
-      {/* Map Canvas */}
-      <div ref={mapContainerRef} className="h-full w-full min-h-[360px] sm:min-h-[460px]" />
+    <div className="relative h-full w-full overflow-hidden border border-slate-300 bg-slate-100 rounded">
+      {/* Map Container */}
+      <div ref={mapContainerRef} className="h-full w-full min-h-[380px] sm:min-h-[480px]" />
 
-      {/* Top Overlay Legend (Strictly following AGENTS.md rule: Colour is never the only signal. Pair it with a word.) */}
+      {/* Top Legend Overlay (Strictly Colour + Word, flat borders) */}
       <div className="absolute top-3 left-3 right-3 sm:right-auto sm:max-w-md z-[400]">
-        <div className="rounded-xl border border-slate-200/80 bg-white/95 p-3 shadow-md backdrop-blur-md">
-          <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-2 mb-2">
-            <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-800">
-              <Layers className="h-3.5 w-3.5 text-emerald-600" />
-              <span>Track Stretch Live Crowd</span>
-            </div>
-            <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600 uppercase tracking-wide">
-              {timeMode === 'now' ? 'Live Now' : timeMode === 'later' ? '+2 Hours' : 'Tomorrow'}
+        <div className="border border-slate-300 bg-white p-3 rounded">
+          <div className="flex items-center justify-between border-b border-slate-200 pb-1.5 mb-2 text-xs">
+            <span className="font-bold text-slate-900">Crowd Level Legend</span>
+            <span className="text-[10px] font-semibold text-slate-600 uppercase">
+              {timeMode === 'now' ? 'Live Blend' : timeMode === 'later' ? '+2 Hours' : 'Tomorrow'}
             </span>
           </div>
 
-          {/* Legend Items */}
-          <div className="grid grid-cols-2 gap-x-2 gap-y-1 sm:grid-cols-4 text-[11px]">
-            <div className="flex items-center gap-1.5 text-slate-700">
-              <span className="h-2.5 w-2.5 rounded-full bg-[#22c55e] shrink-0" />
-              <span className="truncate">Seats free</span>
+          <div className="grid grid-cols-2 gap-x-3 gap-y-1 sm:grid-cols-4 text-[11px]">
+            <div className="flex items-center gap-1.5 text-slate-800">
+              <span className="h-2.5 w-2.5 rounded-full bg-[#15803d] shrink-0" />
+              <span>Seats free</span>
             </div>
-            <div className="flex items-center gap-1.5 text-slate-700">
-              <span className="h-2.5 w-2.5 rounded-full bg-[#f59e0b] shrink-0" />
-              <span className="truncate">Standing</span>
+            <div className="flex items-center gap-1.5 text-slate-800">
+              <span className="h-2.5 w-2.5 rounded-full bg-[#b45309] shrink-0" />
+              <span>Standing</span>
             </div>
-            <div className="flex items-center gap-1.5 text-slate-700">
-              <span className="h-2.5 w-2.5 rounded-full bg-[#ef4444] shrink-0" />
-              <span className="truncate">Packed</span>
+            <div className="flex items-center gap-1.5 text-slate-800">
+              <span className="h-2.5 w-2.5 rounded-full bg-[#b91c1c] shrink-0" />
+              <span>Packed</span>
             </div>
-            <div className="flex items-center gap-1.5 text-slate-700">
-              <span className="h-2.5 w-2.5 rounded-full bg-[#9ca3af] shrink-0" />
-              <span className="truncate">No recent data</span>
+            <div className="flex items-center gap-1.5 text-slate-800">
+              <span className="h-2.5 w-2.5 rounded-full bg-[#64748b] shrink-0" />
+              <span>No data</span>
             </div>
           </div>
-        </div>
-      </div>
-
-      {/* Bottom Hint */}
-      <div className="absolute bottom-3 left-3 z-[400] hidden sm:block">
-        <div className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900/80 px-2.5 py-1 text-xs text-white backdrop-blur-sm shadow">
-          <Info className="h-3 w-3 text-slate-300" />
-          <span>Tap any coloured track segment to inspect crowd and reports</span>
         </div>
       </div>
     </div>

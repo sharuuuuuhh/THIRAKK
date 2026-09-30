@@ -2,21 +2,29 @@
 @import "leaflet/dist/leaflet.css";
 
 :root {
-  --font-inter: 'Inter', sans-serif;
+  --font-system: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 
-  /* Crowd level colours — used both here and in TypeScript (types.ts) */
-  --color-seats-free: #22c55e;   /* green-500 */
-  --color-standing:   #f59e0b;   /* amber-500 */
-  --color-packed:     #ef4444;   /* red-500 */
-  --color-no-board:   #991b1b;   /* red-800 */
-  --color-no-data:    #9ca3af;   /* gray-400 */
+  /* Strict Transit Crowd Palette (AGENTS.md & docs/DESIGN.md) */
+  --color-seats-free: #15803d;   /* green-700 */
+  --color-standing:   #b45309;   /* amber-700 */
+  --color-packed:     #b91c1c;   /* red-700 */
+  --color-no-board:   #7f1d1d;   /* red-900 */
+  --color-no-data:    #64748b;   /* slate-500 */
 }
 
 html {
-  font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-system);
+  background-color: #f8fafc;
+  color: #0f172a;
 }
 
-/* Minimum tap target height — AGENTS.md rule */
-button, a, [role="button"] {
+/* Minimum 44px tap target height as per AGENTS.md */
+button, select, input, a[role="button"] {
   min-height: 44px;
+}
+
+/* Remove all aggressive animation and glow defaults */
+* {
+  box-shadow: none !important;
+  text-shadow: none !important;
 }
