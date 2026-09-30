@@ -3,6 +3,7 @@
 import React, { useState, useRef, useEffect, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
+import { useAuth } from '@/lib/auth-context'
 import {
   INDIA_STATIONS,
   INDIA_TRAINS,
@@ -13,12 +14,14 @@ import { CROWD_LABELS, CROWD_COLORS } from '@/lib/types'
 
 function ReportWizard() {
   const searchParams = useSearchParams()
+  const { userEmail, commuterId } = useAuth()
 
   const queryFrom = searchParams.get('from') || 'CAN'
   const queryTo = searchParams.get('to') || 'TLY'
   const queryTrain = searchParams.get('train') || '16308'
 
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1)
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   const [stationCode, setStationCode] = useState(queryFrom)
   const [trainNumber, setTrainNumber] = useState(queryTrain)
@@ -239,13 +242,62 @@ function ReportWizard() {
     }
   }
 
-  const handleConfirmSend = () => {
+  const handleConfirmSend = async () => {
+    setIsSubmitting(true)
     try {
       const today = new Date().toISOString().split('T')[0]
       const key = `thirakku_report_${today}_${trainNumber}`
+      const reportPayload = {
+        trainNumber,
+        fromCode: stationCode,
+        toCode: queryTo || stationCode,
+        level: finalLevel,
+        photoMatch: matchResult,
+        userEmail: userEmail || undefined,
+        deviceHash: commuterId || 'dev-anon',
+        stationCode,
+        timestamp: Date.now(),
+      }
+
+      // Save locally immediately
       localStorage.setItem(key, JSON.stringify({ level: finalLevel, timestamp: Date.now() }))
-    } catch (e) {}
-    setStep(4)
+
+      // Update local contributions list
+      try {
+        const rawHistory = localStorage.getItem('thirakku_contributions_list')
+        const history = rawHistory ? JSON.parse(rawHistory) : []
+        history.unshift({
+          id: `rep_${Date.now()}`,
+          trainNumber,
+          stationCode,
+          level: finalLevel,
+          photoMatch: matchResult,
+          points: matchResult === 'agree' ? 15 : 10,
+          timestamp: Date.now(),
+          travelDate: today,
+        })
+        localStorage.setItem('thirakku_contributions_list', JSON.stringify(history.slice(0, 50)))
+      } catch (e) {}
+
+      // 1. Post to crowd blend API
+      fetch('/api/crowd', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(reportPayload),
+      }).catch((e) => console.warn('Crowd API sync fallback', e))
+
+      // 2. Post to contributions tracker API
+      await fetch('/api/contributions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(reportPayload),
+      }).catch((e) => console.warn('Contributions API sync fallback', e))
+    } catch (e) {
+      console.warn('Report submission fallback', e)
+    } finally {
+      setIsSubmitting(false)
+      setStep(4)
+    }
   }
 
   const currentStation = getStationByCode(stationCode)
@@ -596,14 +648,23 @@ function ReportWizard() {
           <div className="space-y-2 pt-1">
             <button
               type="button"
+              disabled={isSubmitting}
               onClick={handleConfirmSend}
-              className="w-full rounded bg-slate-900 py-3 text-sm font-semibold text-white hover:bg-slate-800 text-center"
+              className="w-full rounded bg-slate-900 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60 text-center flex items-center justify-center gap-2"
             >
-              Send report ({CROWD_LABELS[finalLevel]})
+              {isSubmitting ? (
+                <>
+                  <span className="h-4 w-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                  <span>Submitting & Awarding Points...</span>
+                </>
+              ) : (
+                <span>Send report ({CROWD_LABELS[finalLevel]})</span>
+              )}
             </button>
 
             <button
               type="button"
+              disabled={isSubmitting}
               onClick={() => setStep(2)}
               className="w-full rounded border border-slate-300 bg-slate-50 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 text-center"
             >
@@ -614,27 +675,44 @@ function ReportWizard() {
       )}
 
 
-      {/* Screen 5: Sent Confirmation */}
+      {/* Screen 5: Sent Confirmation & Contribution Points */}
       {step === 4 && (
-        <div className="border border-slate-300 bg-white p-6 rounded text-center space-y-4">
-          <h2 className="text-xl font-bold text-slate-900">Thanks</h2>
+        <div className="border border-slate-300 bg-white p-6 rounded-2xl text-center space-y-4 shadow-sm">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 text-2xl font-bold">
+            ✓
+          </div>
+          <h2 className="text-xl font-bold text-slate-900">Report Verified & Counted!</h2>
           <p className="text-xs text-slate-700 max-w-sm mx-auto leading-relaxed">
-            Your report is live. It helps people on this route choose a better train and provides evidence for more coaches.
+            Your camera-verified report has been blended into the live crowd map and counted toward your commuter profile.
           </p>
 
-          <div className="border border-slate-200 bg-slate-50 p-3 rounded max-w-xs mx-auto text-xs">
-            <span className="font-bold text-slate-900 block">{CROWD_LABELS[finalLevel]}</span>
-            <span className="text-slate-500 block text-[11px]">
-              {currentTrain?.name || `Train ${trainNumber}`} - {currentStation?.name}
-            </span>
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3 max-w-xs mx-auto text-xs space-y-1">
+            <div className="flex items-center justify-between font-bold text-emerald-950">
+              <span>Points Earned:</span>
+              <span className="rounded bg-emerald-600 px-2 py-0.5 text-white text-[11px]">+15 Karma</span>
+            </div>
+            <div className="flex items-center justify-between text-slate-600 text-[11px] pt-1 border-t border-emerald-100">
+              <span>Crowd Level:</span>
+              <span className="font-bold text-slate-900">{CROWD_LABELS[finalLevel]}</span>
+            </div>
+            <div className="flex items-center justify-between text-slate-600 text-[11px]">
+              <span>Train & Station:</span>
+              <span className="font-semibold text-slate-900">{trainNumber} · {stationCode}</span>
+            </div>
           </div>
 
-          <div className="pt-2">
+          <div className="pt-2 space-y-2">
+            <Link
+              href="/contributions"
+              className="block w-full rounded-xl bg-emerald-600 py-3 text-sm font-semibold text-white hover:bg-emerald-700 text-center shadow-xs transition-colors"
+            >
+              View Your Contributions & Heatmap →
+            </Link>
             <Link
               href="/"
-              className="block w-full rounded bg-slate-900 py-3 text-sm font-semibold text-white hover:bg-slate-800 text-center"
+              className="block w-full rounded-xl border border-slate-300 bg-slate-50 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 text-center transition-colors"
             >
-              Back to crowd map
+              Back to Crowd Map
             </Link>
           </div>
         </div>

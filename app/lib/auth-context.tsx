@@ -26,6 +26,7 @@ interface AuthContextType {
   isLocked: boolean
   lockRemainingSeconds: number
   signInWithGoogle: () => Promise<{ error: string | null }>
+  signInWithSupabaseGoogle: () => Promise<{ error: string | null }>
   signInWithEmail: (email: string, password: string) => Promise<{ error: string | null }>
   signUpWithEmail: (
     email: string,
@@ -77,7 +78,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     } catch (e) {}
 
-    // Listen for Firebase Auth changes
+    // 1. Listen for Supabase Auth changes
+    const { data: authListener } = supabase.auth.onAuthStateChange(
+      async (event, sbSession) => {
+        if (sbSession?.user) {
+          setSession(sbSession)
+          setUser(sbSession.user)
+          if (sbSession.user.email) {
+            setUserEmail(sbSession.user.email)
+            try {
+              localStorage.setItem('thirakku_user_email', sbSession.user.email)
+            } catch (e) {}
+          }
+          setLoading(false)
+        }
+      }
+    )
+
+    // 2. Listen for Firebase Auth changes
     const unsubscribeFirebase = onAuthStateChanged(auth, (fbUser: FirebaseUser | null) => {
       if (fbUser) {
         setUser(fbUser)
@@ -91,8 +109,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else {
         // Check Supabase session fallback
         supabase.auth.getSession().then(({ data: { session: sbSession } }) => {
-          setSession(sbSession)
           if (sbSession?.user) {
+            setSession(sbSession)
             setUser(sbSession.user)
             if (sbSession.user.email) {
               setUserEmail(sbSession.user.email)
@@ -104,6 +122,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     })
 
     return () => {
+      authListener?.subscription?.unsubscribe()
       unsubscribeFirebase()
     }
   }, [])
@@ -152,12 +171,56 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const isLocked = securityState.lockedUntil !== null && securityState.lockedUntil > Date.now()
 
-  // Google OAuth Login (Firebase)
+  // Google OAuth via Supabase
+  const signInWithSupabaseGoogle = async (): Promise<{ error: string | null }> => {
+    if (isLocked) {
+      return { error: `Account login temporarily locked due to security policy. Please wait ${lockRemainingSeconds}s.` }
+    }
+
+    try {
+      const origin = typeof window !== 'undefined' ? window.location.origin : ''
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${origin}/auth/callback`,
+          queryParams: {
+            access_type: 'offline',
+            prompt: 'consent',
+          },
+        },
+      })
+      if (error) throw error
+      resetFailedAttempts()
+      return { error: null }
+    } catch (sbErr: any) {
+      return { error: sbErr.message || 'Supabase Google sign-in failed' }
+    }
+  }
+
+  // Google OAuth Login (Supabase layer + Firebase fallback)
   const signInWithGoogle = async (): Promise<{ error: string | null }> => {
     if (isLocked) {
       return { error: `Account login temporarily locked due to security policy. Please wait ${lockRemainingSeconds}s.` }
     }
 
+    // 1. Try Supabase Google OAuth
+    if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+      try {
+        const origin = typeof window !== 'undefined' ? window.location.origin : ''
+        const { error } = await supabase.auth.signInWithOAuth({
+          provider: 'google',
+          options: {
+            redirectTo: `${origin}/auth/callback`,
+          },
+        })
+        if (!error) {
+          resetFailedAttempts()
+          return { error: null }
+        }
+      } catch (sbErr) {}
+    }
+
+    // 2. Try Firebase Google Popup
     try {
       const result = await signInWithPopup(auth, googleProvider)
       if (result.user) {
@@ -171,20 +234,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { error: null }
       }
     } catch (fbErr: any) {
-      // Fallback: Supabase OAuth
-      try {
-        const { error } = await supabase.auth.signInWithOAuth({
-          provider: 'google',
-          options: {
-            redirectTo: typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : '',
-          },
-        })
-        if (!error) {
-          resetFailedAttempts()
-          return { error: null }
-        }
-      } catch (sbErr) {}
-
       recordFailedAttempt()
       return { error: fbErr.message || 'Google sign-in error' }
     }
@@ -192,24 +241,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return { error: null }
   }
 
-function getRegisteredAccounts(): Record<string, string> {
-  if (typeof window === 'undefined') return {}
-  try {
-    const raw = localStorage.getItem('thirakku_registered_accounts')
-    return raw ? JSON.parse(raw) : {}
-  } catch (e) {
-    return {}
+  function getRegisteredAccounts(): Record<string, string> {
+    if (typeof window === 'undefined') return {}
+    try {
+      const raw = localStorage.getItem('thirakku_registered_accounts')
+      return raw ? JSON.parse(raw) : {}
+    } catch (e) {
+      return {}
+    }
   }
-}
 
-function saveRegisteredAccount(email: string, pass: string) {
-  if (typeof window === 'undefined') return
-  try {
-    const accounts = getRegisteredAccounts()
-    accounts[email.toLowerCase()] = pass
-    localStorage.setItem('thirakku_registered_accounts', JSON.stringify(accounts))
-  } catch (e) {}
-}
+  function saveRegisteredAccount(email: string, pass: string) {
+    if (typeof window === 'undefined') return
+    try {
+      const accounts = getRegisteredAccounts()
+      accounts[email.toLowerCase()] = pass
+      localStorage.setItem('thirakku_registered_accounts', JSON.stringify(accounts))
+    } catch (e) {}
+  }
 
   // Email & Password Sign In (Strict & Reliable Authentication)
   const signInWithEmail = async (email: string, password: string): Promise<{ error: string | null }> => {
@@ -398,6 +447,7 @@ function saveRegisteredAccount(email: string, pass: string) {
         isLocked,
         lockRemainingSeconds,
         signInWithGoogle,
+        signInWithSupabaseGoogle,
         signInWithEmail,
         signUpWithEmail,
         signOut,
