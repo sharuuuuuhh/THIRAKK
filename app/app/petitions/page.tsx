@@ -82,9 +82,6 @@ export default function ImpactAndPetitionPage() {
     <div className="mx-auto max-w-5xl px-4 py-8 space-y-8 text-slate-900">
       {/* Header */}
       <div className="border border-slate-300 bg-white p-6 rounded">
-        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
-          Evidence and Advocacy - Screens 7 & 8
-        </span>
         <h1 className="text-2xl font-bold">Crowd Impact Evidence & Petition</h1>
         <p className="text-xs text-slate-600 mt-1 max-w-2xl">
           Anecdotes are easily dismissed. Verified passenger reports and photo-density evidence cannot be ignored.

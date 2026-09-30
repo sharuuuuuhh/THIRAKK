@@ -14,28 +14,24 @@ export interface SeedReportItem {
 }
 
 export const SAMPLE_CROWD_REPORTS: SeedReportItem[] = [
-  // Malabar Corridor: CAN -> CLT (Morning Peak 07:30 - 09:30)
-  { fromCode: 'CAN', toCode: 'TLY', trainNumber: '16308', level: 3, photoMatch: 'agree', isVolunteer: true, minutesAgo: 8 },
-  { fromCode: 'CAN', toCode: 'TLY', trainNumber: '16308', level: 3, photoMatch: 'agree', isVolunteer: false, minutesAgo: 12 },
-  { fromCode: 'TLY', toCode: 'MAHE', trainNumber: '16308', level: 3, photoMatch: 'agree', isVolunteer: false, minutesAgo: 15 },
-  { fromCode: 'MAHE', toCode: 'BDJ', trainNumber: '16308', level: 3, photoMatch: 'agree', isVolunteer: false, minutesAgo: 19 },
-  { fromCode: 'BDJ', toCode: 'QLD', trainNumber: '16308', level: 4, photoMatch: 'agree', isVolunteer: true, minutesAgo: 11 },
-  { fromCode: 'BDJ', toCode: 'QLD', trainNumber: '16308', level: 4, photoMatch: 'close', isVolunteer: false, minutesAgo: 22 },
-  { fromCode: 'QLD', toCode: 'FK', trainNumber: '16308', level: 3, photoMatch: 'agree', isVolunteer: false, minutesAgo: 25 },
-  { fromCode: 'FK', toCode: 'CLT', trainNumber: '16308', level: 2, photoMatch: 'agree', isVolunteer: false, minutesAgo: 30 },
+  // Malabar Corridor: CAN -> CLT (Default space available)
+  { fromCode: 'CAN', toCode: 'TLY', trainNumber: '16308', level: 1, photoMatch: 'agree', isVolunteer: true, minutesAgo: 8 },
+  { fromCode: 'TLY', toCode: 'MAHE', trainNumber: '16308', level: 1, photoMatch: 'agree', isVolunteer: false, minutesAgo: 15 },
+  { fromCode: 'MAHE', toCode: 'BDJ', trainNumber: '16308', level: 1, photoMatch: 'agree', isVolunteer: false, minutesAgo: 19 },
+  { fromCode: 'BDJ', toCode: 'QLD', trainNumber: '16308', level: 1, photoMatch: 'agree', isVolunteer: true, minutesAgo: 11 },
+  { fromCode: 'QLD', toCode: 'FK', trainNumber: '16308', level: 1, photoMatch: 'agree', isVolunteer: false, minutesAgo: 25 },
+  { fromCode: 'FK', toCode: 'CLT', trainNumber: '16308', level: 1, photoMatch: 'agree', isVolunteer: false, minutesAgo: 30 },
 
-  // Central Corridor: TCR -> ERS (Peak rush hour)
-  { fromCode: 'TCR', toCode: 'IJK', trainNumber: '16306', level: 3, photoMatch: 'agree', isVolunteer: true, minutesAgo: 6 },
-  { fromCode: 'TCR', toCode: 'IJK', trainNumber: '16306', level: 3, photoMatch: 'agree', isVolunteer: false, minutesAgo: 14 },
-  { fromCode: 'IJK', toCode: 'CKI', trainNumber: '16306', level: 3, photoMatch: 'agree', isVolunteer: false, minutesAgo: 18 },
-  { fromCode: 'CKI', toCode: 'AFK', trainNumber: '16306', level: 3, photoMatch: 'agree', isVolunteer: false, minutesAgo: 20 },
-  { fromCode: 'AFK', toCode: 'AWY', trainNumber: '16306', level: 4, photoMatch: 'agree', isVolunteer: true, minutesAgo: 9 },
-  { fromCode: 'AWY', toCode: 'ERS', trainNumber: '16306', level: 4, photoMatch: 'agree', isVolunteer: false, minutesAgo: 12 },
-  { fromCode: 'AWY', toCode: 'ERS', trainNumber: '16306', level: 4, photoMatch: 'agree', isVolunteer: false, minutesAgo: 16 },
+  // Central Corridor: TCR -> ERS (Default space available)
+  { fromCode: 'TCR', toCode: 'IJK', trainNumber: '16306', level: 1, photoMatch: 'agree', isVolunteer: true, minutesAgo: 6 },
+  { fromCode: 'IJK', toCode: 'CKI', trainNumber: '16306', level: 1, photoMatch: 'agree', isVolunteer: false, minutesAgo: 18 },
+  { fromCode: 'CKI', toCode: 'AFK', trainNumber: '16306', level: 1, photoMatch: 'agree', isVolunteer: false, minutesAgo: 20 },
+  { fromCode: 'AFK', toCode: 'AWY', trainNumber: '16306', level: 1, photoMatch: 'agree', isVolunteer: true, minutesAgo: 9 },
+  { fromCode: 'AWY', toCode: 'ERS', trainNumber: '16306', level: 1, photoMatch: 'agree', isVolunteer: false, minutesAgo: 12 },
 
-  // South Kerala: TVC -> QLN -> KTYM
-  { fromCode: 'TVC', toCode: 'QLN', trainNumber: '12076', level: 2, photoMatch: 'agree', isVolunteer: false, minutesAgo: 25 },
-  { fromCode: 'QLN', toCode: 'KYJ', trainNumber: '12076', level: 2, photoMatch: 'agree', isVolunteer: false, minutesAgo: 35 },
+  // South Kerala: TVC -> QLN -> KTYM (Default space available)
+  { fromCode: 'TVC', toCode: 'QLN', trainNumber: '12076', level: 1, photoMatch: 'agree', isVolunteer: false, minutesAgo: 25 },
+  { fromCode: 'QLN', toCode: 'KYJ', trainNumber: '12076', level: 1, photoMatch: 'agree', isVolunteer: false, minutesAgo: 35 },
   { fromCode: 'KYJ', toCode: 'CNGR', trainNumber: '12076', level: 1, photoMatch: 'agree', isVolunteer: false, minutesAgo: 40 },
   { fromCode: 'CNGR', toCode: 'TRVL', trainNumber: '12076', level: 1, photoMatch: 'agree', isVolunteer: false, minutesAgo: 45 },
   { fromCode: 'TRVL', toCode: 'KTYM', trainNumber: '12076', level: 1, photoMatch: 'agree', isVolunteer: false, minutesAgo: 48 },
@@ -63,25 +59,39 @@ export function getStationByCode(code: string): Station | null {
  */
 export function getRouteStations(fromCode: string, toCode: string): Station[] {
   if (!fromCode || !toCode) return []
+  if (fromCode === toCode) {
+    const s = getStationByCode(fromCode)
+    return s ? [s] : []
+  }
 
-  // Check predefined corridors
+  // 1. Check predefined corridors
   for (const route of INDIA_ROUTES) {
     const fIdx = route.station_codes.indexOf(fromCode)
     const tIdx = route.station_codes.indexOf(toCode)
-    if (fIdx !== -1 && tIdx !== -1 && fIdx < tIdx) {
-      const sliceCodes = route.station_codes.slice(fIdx, tIdx + 1)
-      return sliceCodes.map((code) => getStationByCode(code)).filter(Boolean) as Station[]
+    if (fIdx !== -1 && tIdx !== -1) {
+      if (fIdx < tIdx) {
+        const sliceCodes = route.station_codes.slice(fIdx, tIdx + 1)
+        return sliceCodes.map((code) => getStationByCode(code)).filter(Boolean) as Station[]
+      } else {
+        const sliceCodes = route.station_codes.slice(tIdx, fIdx + 1).reverse()
+        return sliceCodes.map((code) => getStationByCode(code)).filter(Boolean) as Station[]
+      }
     }
   }
 
-  // Check trains
+  // 2. Check trains
   for (const train of INDIA_TRAINS) {
     const stopCodes = train.stops.map((s) => s.station_code)
     const fIdx = stopCodes.indexOf(fromCode)
     const tIdx = stopCodes.indexOf(toCode)
-    if (fIdx !== -1 && tIdx !== -1 && fIdx < tIdx) {
-      const sliceCodes = stopCodes.slice(fIdx, tIdx + 1)
-      return sliceCodes.map((code) => getStationByCode(code)).filter(Boolean) as Station[]
+    if (fIdx !== -1 && tIdx !== -1) {
+      if (fIdx < tIdx) {
+        const sliceCodes = stopCodes.slice(fIdx, tIdx + 1)
+        return sliceCodes.map((code) => getStationByCode(code)).filter(Boolean) as Station[]
+      } else {
+        const sliceCodes = stopCodes.slice(tIdx, fIdx + 1).reverse()
+        return sliceCodes.map((code) => getStationByCode(code)).filter(Boolean) as Station[]
+      }
     }
   }
 
@@ -96,12 +106,34 @@ export function getRouteStations(fromCode: string, toCode: string): Station[] {
  * Get active trains on a given route/stretch
  */
 export function getTrainsOnRoute(fromCode: string, toCode: string): any[] {
-  return INDIA_TRAINS.filter((train) => {
-    const stopCodes = train.stops.map((s) => s.station_code)
-    const fIdx = stopCodes.indexOf(fromCode)
-    const tIdx = stopCodes.indexOf(toCode)
+  const direct = INDIA_TRAINS.filter((train) => {
+    const fIdx = train.stops.findIndex((s) => s.station_code === fromCode)
+    const tIdx = train.stops.findIndex((s) => s.station_code === toCode)
     return fIdx !== -1 && tIdx !== -1 && fIdx < tIdx
   })
+
+  if (direct.length > 0) return direct
+
+  // Check reverse trains if user chose reverse direction
+  const reverse = INDIA_TRAINS.filter((train) => {
+    const fIdx = train.stops.findIndex((s) => s.station_code === fromCode)
+    const tIdx = train.stops.findIndex((s) => s.station_code === toCode)
+    return fIdx !== -1 && tIdx !== -1 && fIdx > tIdx
+  })
+
+  if (reverse.length > 0) return reverse
+
+  // Fallback: Return trains containing either fromCode or toCode
+  const partial = INDIA_TRAINS.filter(
+    (t) =>
+      t.stops.some((s) => s.station_code === fromCode) ||
+      t.stops.some((s) => s.station_code === toCode)
+  )
+
+  if (partial.length > 0) return partial.slice(0, 6)
+
+  // Global fallback: default active Indian commuter & express trains
+  return INDIA_TRAINS.slice(0, 6)
 }
 
 /**
@@ -230,18 +262,12 @@ export function computeRouteStretches(
 }
 
 function getHistoricalLevel(fromCode: string, toCode: string): CrowdLevel | null {
-  // Typical high rush on commuter segments
-  if (['CAN', 'TLY', 'BDJ', 'QLD'].includes(fromCode)) return 3 // Packed in morning
-  if (['TCR', 'IJK', 'CKI', 'AWY'].includes(fromCode)) return 3
-  if (['TVC', 'QLN'].includes(fromCode)) return 2
-  return 2
+  // Baseline capacity: space available (Seats free) unless an active rush/issue is logged
+  return 1
 }
 
 function getLaterLevel(fromCode: string, toCode: string): CrowdLevel | null {
-  // Later in afternoon: standing or seats free
-  if (['AWY', 'AFK'].includes(fromCode)) return 3
-  if (['TCR', 'IJK'].includes(fromCode)) return 2
-  if (['CAN', 'TLY'].includes(fromCode)) return 2
+  // Baseline capacity: space available (Seats free) unless an active rush/issue is logged
   return 1
 }
 

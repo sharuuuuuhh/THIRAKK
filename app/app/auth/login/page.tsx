@@ -56,7 +56,7 @@ export default function LoginPage() {
     setLoading(false)
 
     if (error) {
-      setError(error.message || 'Invalid email or password.')
+      setError(error)
     } else {
       setSuccessMsg('Logged in successfully!')
       setTimeout(() => {
@@ -71,7 +71,7 @@ export default function LoginPage() {
     setGoogleLoading(true)
     const { error } = await signInWithGoogle()
     if (error) {
-      setError(error.message || 'Could not start Google authentication.')
+      setError(error)
       setGoogleLoading(false)
     }
   }

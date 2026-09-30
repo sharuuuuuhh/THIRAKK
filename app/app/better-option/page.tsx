@@ -30,9 +30,6 @@ export default function BetterOptionPage() {
   return (
     <div className="mx-auto max-w-2xl px-4 py-8 space-y-6 text-slate-900">
       <div className="border border-slate-300 bg-white p-5 rounded">
-        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
-          Screen 6 - Crowd Avoidance
-        </span>
         <h1 className="text-xl sm:text-2xl font-bold">Better Option & Departure Advice</h1>
         <p className="text-xs text-slate-600 mt-1">
           Shift travel slightly to avoid severe rush loads in unreserved coaches.
@@ -57,16 +54,16 @@ export default function BetterOptionPage() {
         </select>
       </div>
 
-      <div className="border border-red-300 bg-red-50 p-4 rounded space-y-1">
+      <div className="border border-emerald-300 bg-emerald-50 p-4 rounded space-y-1">
         <div className="flex items-center justify-between">
           <div>
             <div className="text-base font-bold text-slate-900">
               {currentTrain.number} - {currentTrain.name}
             </div>
-            <div className="text-xs text-slate-600">Scheduled departure: 08:00 AM</div>
+            <div className="text-xs text-slate-600">Scheduled departure: 08:00 AM · Coach Space Available</div>
           </div>
-          <span className="rounded bg-red-700 px-2.5 py-1 text-xs font-bold text-white">
-            Packed
+          <span className="rounded bg-emerald-700 px-2.5 py-1 text-xs font-bold text-white">
+            Seats free
           </span>
         </div>
       </div>

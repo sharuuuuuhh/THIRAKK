@@ -4,27 +4,44 @@
 :root {
   --font-system: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 
-  /* Strict Transit Crowd Palette (AGENTS.md & docs/DESIGN.md) */
-  --color-seats-free: #15803d;   /* green-700 */
-  --color-standing:   #b45309;   /* amber-700 */
-  --color-packed:     #b91c1c;   /* red-700 */
-  --color-no-board:   #7f1d1d;   /* red-900 */
-  --color-no-data:    #64748b;   /* slate-500 */
+  /* Blue-White Minimalist Design System */
+  --bg-app: #f8fafc;
+  --bg-card: #ffffff;
+  --border-subtle: #e2e8f0;
+  --border-strong: #cbd5e1;
+
+  --blue-primary: #1e3a8a;
+  --blue-accent: #2563eb;
+  --blue-surface: #eff6ff;
+  --blue-text: #1e40af;
+
+  /* Strict Transit Crowd Palette */
+  --color-seats-free: #16a34a;  /* green-600 */
+  --color-standing:   #d97706;  /* amber-600 */
+  --color-packed:     #dc2626;  /* red-600 */
+  --color-no-board:   #991b1b;  /* red-800 */
+  --color-no-data:    #64748b;  /* slate-500 */
 }
 
 html {
   font-family: var(--font-system);
-  background-color: #f8fafc;
+  background-color: var(--bg-app);
   color: #0f172a;
 }
 
-/* Minimum 44px tap target height as per AGENTS.md */
+/* Accessible tap targets */
 button, select, input, a[role="button"] {
   min-height: 44px;
 }
 
-/* Remove all aggressive animation and glow defaults */
+/* Clean, crisp flat surface rendering */
 * {
-  box-shadow: none !important;
-  text-shadow: none !important;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Custom leaflet tweaks for crisp minimalist look */
+.leaflet-container {
+  font-family: inherit;
+  background-color: #f1f5f9;
 }

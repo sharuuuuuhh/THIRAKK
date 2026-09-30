@@ -17,7 +17,7 @@ export default function OnTrainModePage() {
   return (
     <div className="mx-auto max-w-2xl px-4 py-8 space-y-6 text-slate-900">
       <div className="border border-slate-300 bg-white p-4 rounded text-xs text-slate-800">
-        <strong>Prototype Demonstration - Step 9:</strong> On-train mode matches a commuter&apos;s phone to an active train run using speed and timetable proximity while the page is open.
+        <strong>Passive Sensing:</strong> On-train mode matches a commuter&apos;s phone to an active train run using speed and timetable proximity while the page is open.
       </div>
 
       <div className="border border-slate-300 bg-white p-6 rounded">

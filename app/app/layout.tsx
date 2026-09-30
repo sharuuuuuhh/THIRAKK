@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import './globals.css'
 import { AuthProvider } from '@/lib/auth-context'
 import Navbar from '@/components/Navbar'
+import AuthGuard from '@/components/AuthGuard'
 import Link from 'next/link'
 
 export const metadata: Metadata = {
@@ -21,7 +22,9 @@ export default function RootLayout({
         <AuthProvider>
           <div className="flex min-h-screen flex-col">
             <Navbar />
-            <main className="flex-1">{children}</main>
+            <main className="flex-1">
+              <AuthGuard>{children}</AuthGuard>
+            </main>
             <footer className="border-t border-slate-300 bg-white px-4 py-8 text-xs text-slate-600">
               <div className="mx-auto max-w-7xl flex flex-col sm:flex-row items-center justify-between gap-4">
                 <div>

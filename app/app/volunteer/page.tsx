@@ -25,9 +25,6 @@ export default function VolunteerEntryPage() {
   return (
     <div className="mx-auto max-w-xl px-4 py-8 space-y-6 text-slate-900">
       <div className="border border-slate-300 bg-white p-5 rounded">
-        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
-          Screen 9 - Ground Truth Entry
-        </span>
         <h1 className="text-xl font-bold">Volunteer & Station Master Log</h1>
         <p className="text-xs text-slate-600 mt-1">
           Ground-truth logs carry the highest weight (3.0x) in the crowd blending formula.

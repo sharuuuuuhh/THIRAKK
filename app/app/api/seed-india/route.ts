@@ -53,7 +53,7 @@ export async function POST() {
             stop_order: idx + 1,
           }
         })
-        .filter(Boolean)
+        .filter((s): s is { route_id: number; station_id: number; stop_order: number } => s !== null)
 
       if (stops.length > 0) {
         await supabaseAdmin.from('route_stops').upsert(stops, {

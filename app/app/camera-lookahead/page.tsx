@@ -85,7 +85,7 @@ export default function CameraLookaheadPage() {
   return (
     <div className="mx-auto max-w-4xl px-4 py-8 space-y-6 text-slate-900">
       <div className="border border-slate-300 bg-white p-4 rounded text-xs text-slate-800">
-        <strong>Prototype Demonstration - Step 8:</strong> Platform camera look-ahead uses density analysis on sample platform footage to predict crowding on the incoming train.
+        <strong>Platform Look-Ahead:</strong> Platform camera look-ahead uses density analysis on sample platform footage to predict crowding on the incoming train.
       </div>
 
       <div className="border border-slate-300 bg-white p-6 rounded">

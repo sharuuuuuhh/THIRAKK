@@ -64,24 +64,17 @@ export default function SignUpPage() {
     }
 
     setLoading(true)
-    const { session, user: newUser, error } = await signUpWithEmail(email.trim(), password, {
-      full_name: fullName.trim() || undefined,
-    })
+    const { error } = await signUpWithEmail(email.trim(), password, fullName.trim() || undefined)
     setLoading(false)
 
     if (error) {
-      setError(error.message || 'Failed to create account.')
-    } else if (session) {
+      setError(error)
+    } else {
       setSuccessMsg('Account created successfully! Redirecting...')
       setTimeout(() => {
         router.push('/')
         router.refresh()
       }, 700)
-    } else if (newUser) {
-      // Email confirmation may be enabled in Supabase
-      setSuccessMsg(
-        'Account created! If email confirmation is enabled, please check your inbox.'
-      )
     }
   }
 
@@ -90,7 +83,7 @@ export default function SignUpPage() {
     setGoogleLoading(true)
     const { error } = await signInWithGoogle()
     if (error) {
-      setError(error.message || 'Could not start Google sign up.')
+      setError(error)
       setGoogleLoading(false)
     }
   }
