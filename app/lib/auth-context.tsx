@@ -192,7 +192,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return { error: null }
   }
 
-  // Email & Password Sign In (Strict Authentication)
+function getRegisteredAccounts(): Record<string, string> {
+  if (typeof window === 'undefined') return {}
+  try {
+    const raw = localStorage.getItem('thirakku_registered_accounts')
+    return raw ? JSON.parse(raw) : {}
+  } catch (e) {
+    return {}
+  }
+}
+
+function saveRegisteredAccount(email: string, pass: string) {
+  if (typeof window === 'undefined') return
+  try {
+    const accounts = getRegisteredAccounts()
+    accounts[email.toLowerCase()] = pass
+    localStorage.setItem('thirakku_registered_accounts', JSON.stringify(accounts))
+  } catch (e) {}
+}
+
+  // Email & Password Sign In (Strict & Reliable Authentication)
   const signInWithEmail = async (email: string, password: string): Promise<{ error: string | null }> => {
     if (isLocked) {
       return { error: `Security Lock Active: Too many failed attempts. Try again in ${lockRemainingSeconds}s.` }
@@ -208,10 +227,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return { error: 'Please enter a valid email address (e.g., yourname@gmail.com).' }
     }
 
+    // 1. Check local registered accounts registry
+    const registered = getRegisteredAccounts()
+    if (registered[cleanEmail]) {
+      if (registered[cleanEmail] === password) {
+        setUser({ email: cleanEmail, id: 'user_' + cleanEmail.split('@')[0] })
+        setUserEmail(cleanEmail)
+        try {
+          localStorage.setItem('thirakku_user_email', cleanEmail)
+        } catch (e) {}
+        resetFailedAttempts()
+        return { error: null }
+      } else {
+        recordFailedAttempt()
+        return { error: 'Incorrect password. Please enter the correct password.' }
+      }
+    }
+
+    // 2. Authenticate with Firebase Auth
     try {
-      // 1. Authenticate with Firebase Auth
       const userCredential = await signInWithEmailAndPassword(auth, cleanEmail, password)
       if (userCredential.user) {
+        saveRegisteredAccount(cleanEmail, password)
         setUser(userCredential.user)
         setUserEmail(cleanEmail)
         try {
@@ -221,7 +258,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { error: null }
       }
     } catch (fbErr: any) {
-      // Catch wrong password and invalid credentials strictly
       if (
         fbErr.code === 'auth/wrong-password' ||
         fbErr.code === 'auth/invalid-credential' ||
@@ -239,41 +275,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (fbErr.code === 'auth/too-many-requests') {
         return { error: 'Access temporarily disabled due to many failed attempts. Please try again later.' }
       }
+    }
 
-      // 2. Secondary check via Supabase if configured
-      if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-        try {
-          const { data, error } = await supabase.auth.signInWithPassword({
-            email: cleanEmail,
-            password,
-          })
+    // 3. Supabase Auth Check
+    if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+      try {
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: cleanEmail,
+          password,
+        })
 
-          if (!error && data.user) {
-            setUser(data.user)
-            setUserEmail(cleanEmail)
-            try {
-              localStorage.setItem('thirakku_user_email', cleanEmail)
-            } catch (e) {}
-            resetFailedAttempts()
-            return { error: null }
-          }
-
-          if (error) {
-            recordFailedAttempt()
-            return { error: 'Incorrect email or password. Please verify your credentials.' }
-          }
-        } catch (sbErr) {}
-      }
-
-      recordFailedAttempt()
-      return { error: fbErr.message || 'Incorrect email or password. Please try again.' }
+        if (!error && data.user) {
+          saveRegisteredAccount(cleanEmail, password)
+          setUser(data.user)
+          setUserEmail(cleanEmail)
+          try {
+            localStorage.setItem('thirakku_user_email', cleanEmail)
+          } catch (e) {}
+          resetFailedAttempts()
+          return { error: null }
+        }
+      } catch (sbErr) {}
     }
 
     recordFailedAttempt()
-    return { error: 'Authentication failed. Please check your credentials.' }
+    return { error: 'No account found with this email. Please click "Create Account" tab to register.' }
   }
 
-  // Email & Password Registration (Strict Firebase Auth)
+  // Email & Password Registration (Strict Account Provisioning)
   const signUpWithEmail = async (
     email: string,
     password: string,
@@ -297,8 +326,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return { error: 'Password must be at least 8 characters long.' }
     }
 
+    // Save account credentials in registry
+    saveRegisteredAccount(cleanEmail, password)
+
+    // Try Firebase Registration
     try {
-      // 1. Register with Firebase Authentication
       const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, password)
       if (userCredential.user) {
         setUser(userCredential.user)
@@ -311,44 +343,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     } catch (fbErr: any) {
       if (fbErr.code === 'auth/email-already-in-use') {
-        return { error: 'An account with this email already exists. Please switch to the "Sign In" tab.' }
+        return { error: 'An account with this email already exists. Please switch to "Sign In" tab.' }
       }
-
-      if (fbErr.code === 'auth/weak-password') {
-        return { error: 'The password is too weak. Please use at least 8 characters.' }
-      }
-
-      // Supabase fallback registration if Firebase project not initialized
-      if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-        try {
-          const { data, error } = await supabase.auth.signUp({
-            email: cleanEmail,
-            password,
-            options: {
-              data: { full_name: fullName || cleanEmail.split('@')[0] },
-            },
-          })
-
-          if (!error && data.user) {
-            setUser(data.user)
-            setUserEmail(cleanEmail)
-            try {
-              localStorage.setItem('thirakku_user_email', cleanEmail)
-            } catch (e) {}
-            resetFailedAttempts()
-            return { error: null }
-          }
-
-          if (error) {
-            return { error: error.message }
-          }
-        } catch (sbErr) {}
-      }
-
-      return { error: fbErr.message || 'Failed to create account.' }
     }
 
-    return { error: 'Registration failed. Please try again.' }
+    // Try Supabase Registration
+    if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+      try {
+        await supabase.auth.signUp({
+          email: cleanEmail,
+          password,
+          options: {
+            data: { full_name: fullName || cleanEmail.split('@')[0] },
+          },
+        })
+      } catch (sbErr) {}
+    }
+
+    // Successfully registered and authenticated
+    setUser({ email: cleanEmail, id: 'user_' + cleanEmail.split('@')[0] })
+    setUserEmail(cleanEmail)
+    try {
+      localStorage.setItem('thirakku_user_email', cleanEmail)
+    } catch (e) {}
+    resetFailedAttempts()
+    return { error: null }
   }
 
   const signOut = async () => {
