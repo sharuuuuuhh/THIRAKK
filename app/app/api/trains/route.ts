@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { INDIA_TRAINS, INDIA_STATIONS } from '@/lib/data/india-railways-data'
 import { getStationByCode, getRouteStations, computeRouteStretches } from '@/lib/crowd-service'
 
+export const dynamic = 'force-dynamic'
+
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url)

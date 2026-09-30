@@ -8,6 +8,8 @@ import {
 import { supabaseAdmin, isConfigured } from '@/lib/supabase-admin'
 import type { CrowdLevel } from '@/lib/types'
 
+export const dynamic = 'force-dynamic'
+
 // In-memory store for reports when Supabase is running locally or unconfigured
 const runtimeReports = [...SAMPLE_CROWD_REPORTS]
 

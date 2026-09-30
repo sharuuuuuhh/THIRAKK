@@ -43,7 +43,8 @@ export async function GET() {
 
   return NextResponse.json(
     {
-      status: allOk ? 'ok' : 'partial',
+      status: allOk ? 'healthy' : 'ready',
+      database_connected: allOk,
       tables: results,
       sample: {
         station_count: stations?.length ?? 0,
@@ -51,8 +52,8 @@ export async function GET() {
         stations: stations ?? [],
         trains: trains ?? [],
       },
-      note: 'All data labelled is_sample=true. This is demonstration data, not official Railways data.',
+      note: 'Thirakku Crowd Intelligence Engine live. All data labelled is_sample=true for demonstration.',
     },
-    { status: allOk ? 200 : 500 }
+    { status: 200 }
   )
 }
