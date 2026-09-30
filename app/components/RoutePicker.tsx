@@ -103,7 +103,7 @@ export default function RoutePicker({
               <optgroup label="Kerala Stations">
                 {INDIA_STATIONS.filter((s) => s.state === 'Kerala').map((s) => (
                   <option key={s.code} value={s.code}>
-                    {s.name} ({s.code}) {s.name_ml ? `- ${s.name_ml}` : ''}
+                    {s.name} ({s.code})
                   </option>
                 ))}
               </optgroup>
@@ -140,7 +140,7 @@ export default function RoutePicker({
               <optgroup label="Kerala Stations">
                 {INDIA_STATIONS.filter((s) => s.state === 'Kerala').map((s) => (
                   <option key={s.code} value={s.code}>
-                    {s.name} ({s.code}) {s.name_ml ? `- ${s.name_ml}` : ''}
+                    {s.name} ({s.code})
                   </option>
                 ))}
               </optgroup>

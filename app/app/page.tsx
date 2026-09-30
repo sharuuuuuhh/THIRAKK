@@ -20,8 +20,9 @@ const LiveCrowdMap = dynamic(() => import('@/components/LiveCrowdMap'), {
 export default function AppMain() {
   const { user, userEmail, signInWithEmail, signUpWithEmail, signInWithGoogle, signOut, isLocked, lockRemainingSeconds } = useAuth()
   
-  // Direct default: screen 4 (Live Crowd Map) when logged in, screen 1 (Login) when not
-  const [screen, setScreen] = useState<number>(user || userEmail ? 4 : 1)
+  // First time visitor check: Login visible ONLY on very first visit
+  const [screen, setScreen] = useState<number>(4)
+  const [hasVisitedChecked, setHasVisitedChecked] = useState(false)
 
   // Auth mode: 'signin' or 'signup'
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin')
@@ -75,15 +76,19 @@ export default function AppMain() {
   const fromStationObj = getStationByCode(fromCode)
   const toStationObj = getStationByCode(toCode)
 
-  // Automatically go directly to Live Crowd Map when authenticated (no blocking screen unless signed out)
+  // Only show login on the very first time opening the app
   useEffect(() => {
-    if (user || userEmail) {
-      if (screen === 1) {
-        setScreen(4)
+    try {
+      const visited = localStorage.getItem('thirakku_has_visited')
+      if (!visited && !user && !userEmail) {
+        setScreen(1) // First time open
+      } else {
+        setScreen(4) // Direct to Live Crowd Map
       }
-    } else {
-      setScreen(1)
+    } catch (e) {
+      setScreen(4)
     }
+    setHasVisitedChecked(true)
   }, [user, userEmail])
 
   // Password strength calculation
@@ -104,6 +109,13 @@ export default function AppMain() {
     setSecurityNum1(Math.floor(Math.random() * 8) + 2)
     setSecurityNum2(Math.floor(Math.random() * 8) + 1)
     setSecurityAnswer('')
+  }
+
+  const markVisitedAndGoToMap = () => {
+    try {
+      localStorage.setItem('thirakku_has_visited', 'true')
+    } catch (e) {}
+    setScreen(4)
   }
 
   const handleAuthSubmit = async (e: React.FormEvent) => {
@@ -146,7 +158,7 @@ export default function AppMain() {
         refreshSecurityChallenge()
       } else {
         setAuthSuccess('Account registered securely! Redirecting...')
-        setTimeout(() => setScreen(4), 300)
+        markVisitedAndGoToMap()
       }
     } else {
       // Sign in mode
@@ -158,7 +170,7 @@ export default function AppMain() {
         refreshSecurityChallenge()
       } else {
         setAuthSuccess('Signed in securely!')
-        setTimeout(() => setScreen(4), 300)
+        markVisitedAndGoToMap()
       }
     }
   }
@@ -170,18 +182,20 @@ export default function AppMain() {
     setAuthLoading(false)
     if (res.error) {
       setAuthError(res.error)
+    } else {
+      markVisitedAndGoToMap()
     }
   }
 
   return (
     <div className="mx-auto max-w-xl px-4 py-6">
-      {/* Quick Action Navigation Tabs (Only when authenticated) */}
-      {(user || userEmail) && screen > 1 && (
+      {/* Quick Action Navigation Tabs */}
+      {screen > 1 && (
         <div className="mb-4 flex items-center justify-between gap-1 overflow-x-auto rounded-xl bg-slate-100 p-1 border border-slate-200 text-xs">
           <button
             onClick={() => setScreen(4)}
             className={`flex items-center gap-1 rounded-lg px-3 py-1.5 font-bold transition-all ${
-              screen === 4 ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+              screen === 4 ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
             }`}
           >
             <span>🗺️</span>
@@ -190,7 +204,7 @@ export default function AppMain() {
           <button
             onClick={() => setScreen(2)}
             className={`flex items-center gap-1 rounded-lg px-3 py-1.5 font-bold transition-all ${
-              screen === 2 || screen === 3 ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+              screen === 2 || screen === 3 ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
             }`}
           >
             <span>🔍</span>
@@ -369,7 +383,7 @@ export default function AppMain() {
             <button
               type="submit"
               disabled={authLoading || isLocked}
-              className="w-full rounded-xl bg-blue-600 py-3 text-center font-semibold text-white text-xs hover:bg-blue-700 disabled:opacity-50 transition-colors shadow-xs"
+              className="w-full rounded-xl bg-slate-900 py-3 text-center font-semibold text-white text-xs hover:bg-slate-800 disabled:opacity-50 transition-colors shadow-xs"
             >
               {authLoading
                 ? 'Authenticating...'
@@ -379,17 +393,27 @@ export default function AppMain() {
             </button>
           </form>
 
-          <button
-            type="button"
-            disabled={authLoading || isLocked}
-            onClick={handleGoogleAuth}
-            className="rounded-xl border border-slate-200 bg-white py-2.5 text-center font-semibold text-slate-700 text-xs hover:bg-slate-50 transition-colors flex items-center justify-center gap-2"
-          >
-            <span>Continue with Google</span>
-          </button>
+          <div className="grid grid-cols-1 gap-2 pt-1">
+            <button
+              type="button"
+              disabled={authLoading || isLocked}
+              onClick={handleGoogleAuth}
+              className="rounded-xl border border-slate-200 bg-white py-2.5 text-center font-semibold text-slate-700 text-xs hover:bg-slate-50 transition-colors flex items-center justify-center gap-2"
+            >
+              <span>Continue with Google</span>
+            </button>
 
-          <div className="text-slate-400 text-[11px] mt-auto">
-            Protected by automated brute-force rate limiting and zero raw telemetry storage.
+            <button
+              type="button"
+              onClick={markVisitedAndGoToMap}
+              className="rounded-xl border border-slate-300 bg-slate-50 py-2.5 text-center font-semibold text-slate-800 text-xs hover:bg-slate-100 transition-colors"
+            >
+              Explore Live Crowd Map (Guest) →
+            </button>
+          </div>
+
+          <div className="text-slate-400 text-[11px] mt-auto text-center">
+            Protected by automated rate limiting and zero raw telemetry storage.
           </div>
         </div>
       )}
@@ -419,7 +443,7 @@ export default function AppMain() {
               <optgroup label="Kerala Stations">
                 {INDIA_STATIONS.filter((s) => s.state === 'Kerala').map((s) => (
                   <option key={`from-${s.code}`} value={s.code}>
-                    {s.name} ({s.code}) {s.name_ml ? `· ${s.name_ml}` : ''}
+                    {s.name} ({s.code})
                   </option>
                 ))}
               </optgroup>
@@ -445,7 +469,7 @@ export default function AppMain() {
               <optgroup label="Kerala Stations">
                 {INDIA_STATIONS.filter((s) => s.state === 'Kerala').map((s) => (
                   <option key={`to-${s.code}`} value={s.code}>
-                    {s.name} ({s.code}) {s.name_ml ? `· ${s.name_ml}` : ''}
+                    {s.name} ({s.code})
                   </option>
                 ))}
               </optgroup>

@@ -43,11 +43,6 @@ export default function StretchDetailsCard({
           <div className="text-base sm:text-lg font-bold text-slate-900 mt-0.5">
             {from_station.name} to {to_station.name}
           </div>
-          {(from_station.name_ml || to_station.name_ml) && (
-            <div className="text-xs text-slate-500">
-              {from_station.name_ml || from_station.code} to {to_station.name_ml || to_station.code}
-            </div>
-          )}
         </div>
 
         <span className="rounded border border-slate-300 bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700">

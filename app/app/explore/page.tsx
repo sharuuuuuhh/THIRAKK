@@ -223,9 +223,6 @@ export default function IndiaExplorePage() {
                         </div>
                         <div>
                           <div className="font-semibold text-slate-900">{train.name}</div>
-                          {train.name_ml && (
-                            <div className="text-xs text-slate-500">{train.name_ml}</div>
-                          )}
                         </div>
                       </div>
 
@@ -356,9 +353,6 @@ export default function IndiaExplorePage() {
                 <div className="font-semibold text-sm text-slate-900 leading-snug">
                   {station.name}
                 </div>
-                {station.name_ml && (
-                  <div className="text-xs text-slate-500 mt-0.5">{station.name_ml}</div>
-                )}
               </div>
 
               <div className="mt-3 flex items-center justify-between border-t border-slate-200/60 pt-2 text-[11px] text-slate-500">

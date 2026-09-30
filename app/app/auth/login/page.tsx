@@ -4,7 +4,7 @@ import React, { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/auth-context'
-import { Eye, EyeOff, Lock, Mail, ArrowRight, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react'
+import { Eye, EyeOff, Lock, Mail, ArrowRight, Loader2, AlertCircle, CheckCircle2, Train } from 'lucide-react'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -81,8 +81,8 @@ export default function LoginPage() {
       {/* Header */}
       <div className="text-center mb-8">
         <Link href="/" className="inline-flex items-center gap-2 mb-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-600 text-white font-bold text-xl shadow-md">
-            തി
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-white font-bold text-xl shadow-md">
+            <Train className="h-5 w-5" />
           </div>
           <span className="text-2xl font-bold tracking-tight text-gray-900">Thirakku</span>
         </Link>
