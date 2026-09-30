@@ -1,0 +1,22 @@
+@import "tailwindcss";
+@import "leaflet/dist/leaflet.css";
+
+:root {
+  --font-inter: 'Inter', sans-serif;
+
+  /* Crowd level colours — used both here and in TypeScript (types.ts) */
+  --color-seats-free: #22c55e;   /* green-500 */
+  --color-standing:   #f59e0b;   /* amber-500 */
+  --color-packed:     #ef4444;   /* red-500 */
+  --color-no-board:   #991b1b;   /* red-800 */
+  --color-no-data:    #9ca3af;   /* gray-400 */
+}
+
+html {
+  font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Minimum tap target height — AGENTS.md rule */
+button, a, [role="button"] {
+  min-height: 44px;
+}
