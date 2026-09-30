@@ -192,7 +192,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return { error: null }
   }
 
-  // Email & Password Sign In (Firebase Authentication)
+  // Email & Password Sign In (Strict Authentication)
   const signInWithEmail = async (email: string, password: string): Promise<{ error: string | null }> => {
     if (isLocked) {
       return { error: `Security Lock Active: Too many failed attempts. Try again in ${lockRemainingSeconds}s.` }
@@ -200,7 +200,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const cleanEmail = email.trim().toLowerCase()
     if (!cleanEmail || !password) {
-      return { error: 'Please provide both email and password.' }
+      return { error: 'Please enter both your email address and password.' }
     }
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -209,7 +209,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      // 1. Try Firebase Authentication
+      // 1. Authenticate with Firebase Auth
       const userCredential = await signInWithEmailAndPassword(auth, cleanEmail, password)
       if (userCredential.user) {
         setUser(userCredential.user)
@@ -221,13 +221,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { error: null }
       }
     } catch (fbErr: any) {
-      // If user not found in Firebase, attempt auto-create or Supabase
-      if (fbErr.code === 'auth/user-not-found' || fbErr.code === 'auth/invalid-credential') {
+      // Catch wrong password and invalid credentials strictly
+      if (
+        fbErr.code === 'auth/wrong-password' ||
+        fbErr.code === 'auth/invalid-credential' ||
+        fbErr.code === 'auth/invalid-login-credentials'
+      ) {
+        recordFailedAttempt()
+        return { error: 'Incorrect password. Please enter the correct password.' }
+      }
+
+      if (fbErr.code === 'auth/user-not-found') {
+        recordFailedAttempt()
+        return { error: 'No account found with this email. Please click "Create Account" tab to register.' }
+      }
+
+      if (fbErr.code === 'auth/too-many-requests') {
+        return { error: 'Access temporarily disabled due to many failed attempts. Please try again later.' }
+      }
+
+      // 2. Secondary check via Supabase if configured
+      if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
         try {
-          // Attempt account auto-provision in Firebase
-          const newCred = await createUserWithEmailAndPassword(auth, cleanEmail, password)
-          if (newCred.user) {
-            setUser(newCred.user)
+          const { data, error } = await supabase.auth.signInWithPassword({
+            email: cleanEmail,
+            password,
+          })
+
+          if (!error && data.user) {
+            setUser(data.user)
             setUserEmail(cleanEmail)
             try {
               localStorage.setItem('thirakku_user_email', cleanEmail)
@@ -235,39 +257,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             resetFailedAttempts()
             return { error: null }
           }
-        } catch (createErr) {}
+
+          if (error) {
+            recordFailedAttempt()
+            return { error: 'Incorrect email or password. Please verify your credentials.' }
+          }
+        } catch (sbErr) {}
       }
 
-      // 2. Try Supabase fallback
-      try {
-        const { data, error } = await supabase.auth.signInWithPassword({
-          email: cleanEmail,
-          password,
-        })
-        if (!error && data.user) {
-          setUser(data.user)
-          setUserEmail(cleanEmail)
-          try {
-            localStorage.setItem('thirakku_user_email', cleanEmail)
-          } catch (e) {}
-          resetFailedAttempts()
-          return { error: null }
-        }
-      } catch (sbErr) {}
-
-      // 3. Graceful demo/commuter authorization
-      setUserEmail(cleanEmail)
-      try {
-        localStorage.setItem('thirakku_user_email', cleanEmail)
-      } catch (e) {}
-      resetFailedAttempts()
-      return { error: null }
+      recordFailedAttempt()
+      return { error: fbErr.message || 'Incorrect email or password. Please try again.' }
     }
 
-    return { error: null }
+    recordFailedAttempt()
+    return { error: 'Authentication failed. Please check your credentials.' }
   }
 
-  // Email & Password Registration (Firebase Authentication)
+  // Email & Password Registration (Strict Firebase Auth)
   const signUpWithEmail = async (
     email: string,
     password: string,
@@ -287,12 +293,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return { error: 'Please enter a valid Gmail / Email address.' }
     }
 
-    if (password.length < 6) {
-      return { error: 'Password must be at least 6 characters long.' }
+    if (password.length < 8) {
+      return { error: 'Password must be at least 8 characters long.' }
     }
 
     try {
-      // 1. Firebase Authentication Create User
+      // 1. Register with Firebase Authentication
       const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, password)
       if (userCredential.user) {
         setUser(userCredential.user)
@@ -305,40 +311,44 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     } catch (fbErr: any) {
       if (fbErr.code === 'auth/email-already-in-use') {
-        // If already in use, sign in
-        return signInWithEmail(cleanEmail, password)
+        return { error: 'An account with this email already exists. Please switch to the "Sign In" tab.' }
       }
 
-      // Supabase fallback registration
-      try {
-        const { data } = await supabase.auth.signUp({
-          email: cleanEmail,
-          password,
-          options: {
-            data: { full_name: fullName || cleanEmail.split('@')[0] },
-          },
-        })
-        if (data.user) {
-          setUser(data.user)
-          setUserEmail(cleanEmail)
-          try {
-            localStorage.setItem('thirakku_user_email', cleanEmail)
-          } catch (e) {}
-          resetFailedAttempts()
-          return { error: null }
-        }
-      } catch (sbErr) {}
+      if (fbErr.code === 'auth/weak-password') {
+        return { error: 'The password is too weak. Please use at least 8 characters.' }
+      }
 
-      // Fallback authorization
-      setUserEmail(cleanEmail)
-      try {
-        localStorage.setItem('thirakku_user_email', cleanEmail)
-      } catch (e) {}
-      resetFailedAttempts()
-      return { error: null }
+      // Supabase fallback registration if Firebase project not initialized
+      if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+        try {
+          const { data, error } = await supabase.auth.signUp({
+            email: cleanEmail,
+            password,
+            options: {
+              data: { full_name: fullName || cleanEmail.split('@')[0] },
+            },
+          })
+
+          if (!error && data.user) {
+            setUser(data.user)
+            setUserEmail(cleanEmail)
+            try {
+              localStorage.setItem('thirakku_user_email', cleanEmail)
+            } catch (e) {}
+            resetFailedAttempts()
+            return { error: null }
+          }
+
+          if (error) {
+            return { error: error.message }
+          }
+        } catch (sbErr) {}
+      }
+
+      return { error: fbErr.message || 'Failed to create account.' }
     }
 
-    return { error: null }
+    return { error: 'Registration failed. Please try again.' }
   }
 
   const signOut = async () => {
