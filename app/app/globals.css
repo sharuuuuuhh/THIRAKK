@@ -1,32 +1,60 @@
 @import "tailwindcss";
-@import "leaflet/dist/leaflet.css";
 
 :root {
-  --font-system: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-main: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  
+  /* Modern Precision Dark Theme */
+  --bg-app:        #080b11;
+  --bg-surface:    #0e131f;
+  --bg-card:       #131a29;
+  --bg-card-hover: #192235;
+  --bg-input:      #0b0f17;
+  
+  /* Crisp Hairline Borders */
+  --border:        rgba(255, 255, 255, 0.08);
+  --border-mid:    rgba(255, 255, 255, 0.14);
+  --border-strong: rgba(255, 255, 255, 0.22);
+  
+  /* Primary Action: High-contrast transit electric blue */
+  --primary:       #2563eb;
+  --primary-hover: #1d4ed8;
+  --primary-glow:  rgba(37, 99, 235, 0.25);
+  
+  /* Transit Crowd Palette (AGENTS.md non-negotiable) */
+  --color-seats-free: #10b981; /* Green */
+  --color-standing:   #f59e0b; /* Amber */
+  --color-packed:     #ef4444; /* Red */
+  --color-no-board:   #991b1b; /* Dark red */
+  --color-no-data:    #64748b; /* Grey */
+  
+  /* High Contrast Typography */
+  --text-primary:   #f8fafc;
+  --text-secondary: #94a3b8;
+  --text-muted:     #64748b;
+  
+  /* Radii */
+  --r-sm:  6px;
+  --r-md:  10px;
+  --r-lg:  14px;
+  --r-xl:  18px;
+}
 
-  /* Blue-White Minimalist Design System */
-  --bg-app: #f8fafc;
-  --bg-card: #ffffff;
-  --border-subtle: #e2e8f0;
-  --border-strong: #cbd5e1;
-
-  --blue-primary: #1e3a8a;
-  --blue-accent: #2563eb;
-  --blue-surface: #eff6ff;
-  --blue-text: #1e40af;
-
-  /* Strict Transit Crowd Palette */
-  --color-seats-free: #16a34a;  /* green-600 */
-  --color-standing:   #d97706;  /* amber-600 */
-  --color-packed:     #dc2626;  /* red-600 */
-  --color-no-board:   #991b1b;  /* red-800 */
-  --color-no-data:    #64748b;  /* slate-500 */
+*, *::before, *::after {
+  box-sizing: border-box;
 }
 
 html {
-  font-family: var(--font-system);
+  font-family: var(--font-main);
   background-color: var(--bg-app);
-  color: #0f172a;
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  scroll-behavior: smooth;
+}
+
+body {
+  min-height: 100dvh;
+  background-color: var(--bg-app);
 }
 
 /* Accessible tap targets */
@@ -34,14 +62,212 @@ button, select, input, a[role="button"] {
   min-height: 44px;
 }
 
-/* Clean, crisp flat surface rendering */
-* {
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+/* Subtle modern scrollbar */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.24);
 }
 
-/* Custom leaflet tweaks for crisp minimalist look */
+/* Professional card containers */
+.transit-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl);
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.transit-card-inner {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+}
+
+/* Buttons - Verb-first, Sentence case, 44px+ */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 46px;
+  padding: 0 20px;
+  border-radius: var(--r-md);
+  background: var(--primary);
+  color: #ffffff;
+  font-weight: 600;
+  font-size: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: var(--font-main);
+  text-decoration: none;
+}
+.btn-primary:hover:not(:disabled) {
+  background: var(--primary-hover);
+  box-shadow: 0 4px 16px var(--primary-glow);
+}
+.btn-primary:active:not(:disabled) {
+  transform: translateY(1px);
+}
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 46px;
+  padding: 0 18px;
+  border-radius: var(--r-md);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-weight: 500;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: var(--font-main);
+  text-decoration: none;
+}
+.btn-secondary:hover:not(:disabled) {
+  background: var(--bg-card-hover);
+  border-color: var(--border-mid);
+}
+.btn-secondary:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+/* Crisp input field */
+.transit-input {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 14px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 500;
+  font-family: var(--font-main);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  outline: none;
+}
+.transit-input::placeholder {
+  color: var(--text-muted);
+}
+.transit-input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.25);
+}
+
+/* Subtle live telemetry pulse */
+@keyframes live-ping {
+  0% { transform: scale(0.95); opacity: 0.8; }
+  50% { transform: scale(1.4); opacity: 0; }
+  100% { transform: scale(0.95); opacity: 0; }
+}
+
+.live-indicator {
+  position: relative;
+  display: inline-flex;
+  width: 8px;
+  height: 8px;
+}
+.live-indicator::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: 50%;
+  background: #10b981;
+  animation: live-ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+.live-indicator::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: #10b981;
+}
+
+/* Crowd status chips */
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+.status-chip-green {
+  background: rgba(16, 185, 129, 0.12);
+  color: #34d399;
+  border-color: rgba(16, 185, 129, 0.25);
+}
+.status-chip-amber {
+  background: rgba(245, 158, 11, 0.12);
+  color: #fbbf24;
+  border-color: rgba(245, 158, 11, 0.25);
+}
+.status-chip-red {
+  background: rgba(239, 68, 68, 0.12);
+  color: #f87171;
+  border-color: rgba(239, 68, 68, 0.25);
+}
+.status-chip-darkred {
+  background: rgba(153, 27, 27, 0.2);
+  color: #fca5a5;
+  border-color: rgba(153, 27, 27, 0.4);
+}
+.status-chip-grey {
+  background: rgba(100, 116, 139, 0.15);
+  color: #94a3b8;
+  border-color: rgba(100, 116, 139, 0.3);
+}
+
+/* Map styling */
 .leaflet-container {
-  font-family: inherit;
-  background-color: #f1f5f9;
+  font-family: var(--font-main);
+  background: #090d16;
+  border-radius: var(--r-lg);
+}
+.leaflet-tile {
+  filter: brightness(0.58) saturate(0.5);
+}
+.leaflet-control-zoom a {
+  background: var(--bg-card) !important;
+  color: var(--text-secondary) !important;
+  border-color: var(--border) !important;
+}
+.leaflet-control-zoom a:hover {
+  background: var(--bg-card-hover) !important;
+  color: var(--text-primary) !important;
+}
+.leaflet-control-attribution {
+  background: rgba(9, 13, 22, 0.8) !important;
+  color: var(--text-muted) !important;
+  font-size: 9px !important;
+}
+.leaflet-popup-content-wrapper {
+  background: var(--bg-card) !important;
+  border: 1px solid var(--border-mid) !important;
+  color: var(--text-primary) !important;
+  border-radius: var(--r-md) !important;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6) !important;
+}
+.leaflet-popup-tip {
+  background: var(--bg-card) !important;
 }

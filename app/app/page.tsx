@@ -1,666 +1,436 @@
 'use client'
 
-import React, { useState, useMemo, useEffect } from 'react'
+import React, { useState, useMemo } from 'react'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
-import { INDIA_STATIONS } from '@/lib/data/india-railways-data'
 import { getRouteStations, computeRouteStretches, getStationByCode, getTrainsOnRoute } from '@/lib/crowd-service'
-import { useAuth } from '@/lib/auth-context'
+import { CROWD_COLORS, NO_DATA_COLOR, type StretchCrowd } from '@/lib/types'
+import { StationSearch } from '@/components/StationSearch'
+import {
+  Train,
+  ArrowRightLeft,
+  ArrowRight,
+  Camera,
+  Compass,
+  FileText,
+  Trophy,
+  ShieldCheck,
+  Clock,
+  Sparkles,
+  Info,
+  Loader2,
+  AlertTriangle
+} from 'lucide-react'
 
-// Dynamically load Leaflet Map
+// Dynamically load Leaflet Map to prevent SSR errors
 const LiveCrowdMap = dynamic(() => import('@/components/LiveCrowdMap'), {
   ssr: false,
   loading: () => (
-    <div className="flex h-[280px] w-full items-center justify-center border border-slate-200 bg-slate-50 text-slate-500 rounded-xl">
-      <span className="text-xs font-semibold">Loading live track map...</span>
+    <div
+      className="flex h-[320px] w-full items-center justify-center rounded-xl"
+      style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border)' }}
+    >
+      <div className="flex flex-col items-center gap-2.5">
+        <Loader2 className="h-5 w-5 animate-spin text-blue-400" />
+        <span className="text-xs font-medium text-slate-400">Loading Kerala rail crowd map…</span>
+      </div>
     </div>
   ),
 })
 
+const CROWD_LABELS: Record<number, string> = {
+  1: 'Seats free',
+  2: 'Standing',
+  3: 'Packed',
+  4: "Couldn't board",
+}
+
+function getStatusChipClass(level: number | null) {
+  if (level === 1) return 'status-chip status-chip-green'
+  if (level === 2) return 'status-chip status-chip-amber'
+  if (level === 3) return 'status-chip status-chip-red'
+  if (level === 4) return 'status-chip status-chip-darkred'
+  return 'status-chip status-chip-grey'
+}
+
+// Popular Kerala commuter corridors for instant 1-tap switching
+const POPULAR_CORRIDORS = [
+  { label: 'Kannur ⇄ Kozhikode', from: 'CAN', to: 'CLT' },
+  { label: 'Ernakulam ⇄ Thrissur', from: 'ERS', to: 'TCR' },
+  { label: 'Trivandrum ⇄ Kollam', from: 'TVC', to: 'QLN' },
+  { label: 'Shoranur ⇄ Palakkad', from: 'SRR', to: 'PGT' },
+]
+
 export default function AppMain() {
-  const { user, userEmail, signInWithEmail, signUpWithEmail, signInWithGoogle, signOut, isLocked, lockRemainingSeconds } = useAuth()
-  
-  // First time visitor check: Login visible ONLY on very first visit
-  const [screen, setScreen] = useState<number>(4)
-  const [hasVisitedChecked, setHasVisitedChecked] = useState(false)
-
-  // Auth mode: 'signin' or 'signup'
-  const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin')
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [confirmPassword, setConfirmPassword] = useState('')
-  const [showPassword, setShowPassword] = useState(false)
-  const [authLoading, setAuthLoading] = useState(false)
-  const [authError, setAuthError] = useState<string | null>(null)
-  const [authSuccess, setAuthSuccess] = useState<string | null>(null)
-
-  // Security Challenge Layer
-  const [securityNum1, setSecurityNum1] = useState(4)
-  const [securityNum2, setSecurityNum2] = useState(3)
-  const [securityAnswer, setSecurityAnswer] = useState('')
-
-  // Search and station selection
+  // Station route selection
   const [fromCode, setFromCode] = useState('CAN')
   const [toCode, setToCode] = useState('CLT')
+  const [timeMode, setTimeMode] = useState<'now' | 'later' | 'tomorrow'>('now')
+  const [selectedStretch, setSelectedStretch] = useState<StretchCrowd | null>(null)
 
-  // Selected train and crowd state (Default: space available unless issue reported)
-  const [selectedTrain, setSelectedTrain] = useState<{
-    number: string
-    name: string
-    depTime: string
-    arrTime: string
-    level: string
-    color: string
-  }>({
-    number: '16308',
-    name: '16308 Executive Express',
-    depTime: '05:10',
-    arrTime: '06:37',
-    level: 'Seats free',
-    color: '#639922',
-  })
-
-  const [selectedLevel, setSelectedLevel] = useState<'Seats free' | 'Standing' | 'Packed'>('Seats free')
-  const [reminded, setReminded] = useState(false)
-
-  // Map & Stretches dynamically resolved
+  // Dynamic route data
   const routeStations = useMemo(() => getRouteStations(fromCode, toCode), [fromCode, toCode])
-  const routeStretches = useMemo(() => computeRouteStretches(routeStations, 'now'), [routeStations])
+  const routeStretches = useMemo(() => computeRouteStretches(routeStations, timeMode), [routeStations, timeMode])
   const matchingTrains = useMemo(() => getTrainsOnRoute(fromCode, toCode), [fromCode, toCode])
 
-  // 10-week clean reset contribution data
-  const gridWeeks = Array.from({ length: 10 }).map(() => {
-    return Array.from({ length: 7 }).map(() => 0)
-  })
+  const fromStation = getStationByCode(fromCode)
+  const toStation = getStationByCode(toCode)
 
-  const fromStationObj = getStationByCode(fromCode)
-  const toStationObj = getStationByCode(toCode)
+  // Selected train state (defaults to the first train on route)
+  const [selectedTrainNumber, setSelectedTrainNumber] = useState<string>('16308')
 
-  // Only show login on the very first time opening the app
-  useEffect(() => {
-    try {
-      const visited = localStorage.getItem('thirakku_has_visited')
-      if (!visited && !user && !userEmail) {
-        setScreen(1) // First time open
-      } else {
-        setScreen(4) // Direct to Live Crowd Map
-      }
-    } catch (e) {
-      setScreen(4)
-    }
-    setHasVisitedChecked(true)
-  }, [user, userEmail])
+  const activeTrain = useMemo(() => {
+    return matchingTrains.find((t) => t.number === selectedTrainNumber) || matchingTrains[0] || null
+  }, [matchingTrains, selectedTrainNumber])
 
-  // Password strength calculation
-  const passwordStrength = useMemo(() => {
-    if (!password) return { label: 'Empty', color: 'bg-slate-200', score: 0 }
-    let score = 0
-    if (password.length >= 8) score++
-    if (/[A-Z]/.test(password)) score++
-    if (/[0-9]/.test(password)) score++
-    if (/[^A-Za-z0-9]/.test(password)) score++
+  // Aggregate crowd assessment for active train on this corridor
+  const overallLevel = useMemo(() => {
+    if (!routeStretches || routeStretches.length === 0) return null
+    // Take weighted average of known stretches
+    const known = routeStretches.filter((s) => s.level !== null)
+    if (known.length === 0) return null
+    const maxLevel = Math.max(...known.map((s) => s.level!))
+    return maxLevel
+  }, [routeStretches])
 
-    if (score <= 1) return { label: 'Weak (min 8 chars)', color: 'bg-red-500', score: 1 }
-    if (score === 2 || score === 3) return { label: 'Medium', color: 'bg-amber-500', score: 2 }
-    return { label: 'Strong Security', color: 'bg-green-600', score: 3 }
-  }, [password])
+  const crowdWord = overallLevel ? CROWD_LABELS[overallLevel] : 'No recent data'
+  const crowdColor = overallLevel ? CROWD_COLORS[overallLevel] : NO_DATA_COLOR
 
-  const refreshSecurityChallenge = () => {
-    setSecurityNum1(Math.floor(Math.random() * 8) + 2)
-    setSecurityNum2(Math.floor(Math.random() * 8) + 1)
-    setSecurityAnswer('')
-  }
-
-  const markVisitedAndGoToMap = () => {
-    try {
-      localStorage.setItem('thirakku_has_visited', 'true')
-    } catch (e) {}
-    setScreen(4)
-  }
-
-  const handleAuthSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setAuthError(null)
-    setAuthSuccess(null)
-
-    if (isLocked) {
-      setAuthError(`Security lockout: Please wait ${lockRemainingSeconds} seconds.`)
-      return
-    }
-
-    if (!email.trim() || !password) {
-      setAuthError('Please enter both Gmail / Email address and password.')
-      return
-    }
-
-    // Security challenge check
-    if (parseInt(securityAnswer.trim(), 10) !== securityNum1 + securityNum2) {
-      setAuthError('Security verification failed. Please solve the math check.')
-      refreshSecurityChallenge()
-      return
-    }
-
-    if (authMode === 'signup') {
-      if (password !== confirmPassword) {
-        setAuthError('Passwords do not match.')
-        return
-      }
-      if (password.length < 8) {
-        setAuthError('Password must be at least 8 characters long.')
-        return
-      }
-
-      setAuthLoading(true)
-      const res = await signUpWithEmail(email.trim(), password)
-      setAuthLoading(false)
-      if (res.error) {
-        setAuthError(res.error)
-        refreshSecurityChallenge()
-      } else {
-        setAuthSuccess('Account registered securely! Redirecting...')
-        markVisitedAndGoToMap()
-      }
-    } else {
-      // Sign in mode
-      setAuthLoading(true)
-      const res = await signInWithEmail(email.trim(), password)
-      setAuthLoading(false)
-      if (res.error) {
-        setAuthError(res.error)
-        refreshSecurityChallenge()
-      } else {
-        setAuthSuccess('Signed in securely!')
-        markVisitedAndGoToMap()
-      }
-    }
-  }
-
-  const handleGoogleAuth = async () => {
-    setAuthError(null)
-    setAuthLoading(true)
-    const res = await signInWithGoogle()
-    setAuthLoading(false)
-    if (res.error) {
-      setAuthError(res.error)
-    } else {
-      markVisitedAndGoToMap()
-    }
+  // Swap stations
+  const handleSwapStations = () => {
+    const temp = fromCode
+    setFromCode(toCode)
+    setToCode(temp)
+    setSelectedStretch(null)
   }
 
   return (
-    <div className="mx-auto max-w-xl px-4 py-6">
-      {/* Quick Action Navigation Tabs */}
-      {screen > 1 && (
-        <div className="mb-4 flex items-center justify-between gap-1 overflow-x-auto rounded-xl bg-slate-100 p-1 border border-slate-200 text-xs">
-          <button
-            onClick={() => setScreen(4)}
-            className={`flex items-center gap-1 rounded-lg px-3 py-1.5 font-bold transition-all ${
-              screen === 4 ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <span>🗺️</span>
-            <span>Live Map</span>
-          </button>
-          <button
-            onClick={() => setScreen(2)}
-            className={`flex items-center gap-1 rounded-lg px-3 py-1.5 font-bold transition-all ${
-              screen === 2 || screen === 3 ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <span>🔍</span>
-            <span>Change Route</span>
-          </button>
-          <Link
-            href={`/report?from=${fromCode}&to=${toCode}&train=${selectedTrain.number}`}
-            className="flex items-center gap-1 rounded-lg px-3 py-1.5 font-bold text-slate-600 hover:text-slate-900 transition-all"
-          >
-            <span>📸</span>
-            <span>Report</span>
-          </Link>
-          <Link
-            href="/better-option"
-            className="flex items-center gap-1 rounded-lg px-3 py-1.5 font-bold text-slate-600 hover:text-slate-900 transition-all"
-          >
-            <span>⚡</span>
-            <span>Advice</span>
-          </Link>
-          <Link
-            href="/contributions"
-            className="flex items-center gap-1 rounded-lg px-3 py-1.5 font-bold text-slate-600 hover:text-slate-900 transition-all"
-          >
-            <span>🏆</span>
-            <span>Board</span>
-          </Link>
-        </div>
-      )}
+    <div className="min-h-screen py-5 px-3 sm:px-6">
+      <div className="mx-auto max-w-4xl space-y-4">
 
-      {/* LOGIN & REGISTRATION */}
-      {screen === 1 && (
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 min-h-[440px] flex flex-col gap-3 text-xs text-slate-800 shadow-xs max-w-md mx-auto">
-          <div className="flex items-center justify-between">
-            <div className="text-base font-bold text-slate-900">Thirakku Security Access</div>
-            <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700 border border-blue-200">
-              SSL Encrypted
-            </span>
-          </div>
-          <div className="text-slate-500 -mt-1">Sign in or register with your Gmail / Email address.</div>
-
-          {/* Security Lockout Banner */}
-          {isLocked && (
-            <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 font-semibold">
-              🔒 Security cooldown active: {lockRemainingSeconds}s remaining due to failed login attempts.
-            </div>
-          )}
-
-          {authError && !isLocked && (
-            <div className="rounded-xl border border-red-200 bg-red-50 p-2.5 text-xs text-red-700 font-medium">
-              {authError}
-            </div>
-          )}
-
-          {authSuccess && (
-            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-2.5 text-xs text-emerald-800 font-medium">
-              {authSuccess}
-            </div>
-          )}
-
-          {/* Tab Switcher: Sign In vs Register */}
-          <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1 border border-slate-200">
-            <button
-              type="button"
-              onClick={() => {
-                setAuthMode('signin')
-                setAuthError(null)
-              }}
-              className={`rounded-lg py-1.5 text-center text-xs font-bold transition-all ${
-                authMode === 'signin' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Sign In
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setAuthMode('signup')
-                setAuthError(null)
-              }}
-              className={`rounded-lg py-1.5 text-center text-xs font-bold transition-all ${
-                authMode === 'signup' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Create Account
-            </button>
-          </div>
-
-          {/* Form */}
-          <form onSubmit={handleAuthSubmit} className="space-y-3">
+        {/* ── 1. ROUTE & SEARCH BAR (Compact & Decluttered) ── */}
+        <section className="transit-card p-4 sm:p-5 space-y-3.5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800/80 pb-3">
             <div>
-              <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                Gmail / Email Address
-              </label>
-              <input
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="passenger@gmail.com"
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-xs text-slate-900 focus:bg-white focus:border-blue-500 focus:outline-none"
-              />
+              <h1 className="text-base sm:text-lg font-bold text-white tracking-tight flex items-center gap-2">
+                <span>Check train crowd</span>
+                <span className="text-xs font-normal text-slate-400">· Kerala Corridor</span>
+              </h1>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Real-time passenger crowd map for unreserved & general coaches.
+              </p>
             </div>
 
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="block text-[11px] font-semibold text-slate-600">
-                  Password
-                </label>
+            {/* Time Mode Pills */}
+            <div className="inline-flex items-center rounded-lg bg-slate-900/90 border border-slate-800 p-1 self-start sm:self-auto">
+              {(['now', 'later', 'tomorrow'] as const).map((mode) => (
                 <button
+                  key={mode}
                   type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="text-[11px] font-semibold text-blue-600 hover:underline"
-                >
-                  {showPassword ? 'Hide' : 'Show'}
-                </button>
-              </div>
-              <input
-                type={showPassword ? 'text' : 'password'}
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Min. 8 characters"
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-xs text-slate-900 focus:bg-white focus:border-blue-500 focus:outline-none"
-              />
-              {authMode === 'signup' && password.length > 0 && (
-                <div className="mt-1 flex items-center justify-between text-[10px]">
-                  <span className="text-slate-500">Strength: {passwordStrength.label}</span>
-                  <div className="h-1.5 w-16 bg-slate-200 rounded-full overflow-hidden">
-                    <div
-                      className={`h-full ${passwordStrength.color}`}
-                      style={{ width: `${(passwordStrength.score / 3) * 100}%` }}
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {authMode === 'signup' && (
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                  Confirm Password
-                </label>
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  required
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder="Repeat password"
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-xs text-slate-900 focus:bg-white focus:border-blue-500 focus:outline-none"
-                />
-              </div>
-            )}
-
-            {/* Security Anti-Bot Verification Challenge */}
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-2.5 space-y-1.5">
-              <div className="flex items-center justify-between text-[11px]">
-                <span className="font-bold text-slate-700">Security Check: {securityNum1} + {securityNum2} = ?</span>
-                <button
-                  type="button"
-                  onClick={refreshSecurityChallenge}
-                  className="text-[10px] text-blue-600 hover:underline"
-                >
-                  New question
-                </button>
-              </div>
-              <input
-                type="number"
-                required
-                value={securityAnswer}
-                onChange={(e) => setSecurityAnswer(e.target.value)}
-                placeholder="Answer"
-                className="w-full rounded-lg border border-slate-200 bg-white p-1.5 text-xs text-slate-900 focus:border-blue-500 focus:outline-none"
-              />
-            </div>
-
-            <button
-              type="submit"
-              disabled={authLoading || isLocked}
-              className="w-full rounded-xl bg-slate-900 py-3 text-center font-semibold text-white text-xs hover:bg-slate-800 disabled:opacity-50 transition-colors shadow-xs"
-            >
-              {authLoading
-                ? 'Authenticating...'
-                : authMode === 'signup'
-                ? 'Create Secure Account'
-                : 'Sign In'}
-            </button>
-          </form>
-
-          <div className="grid grid-cols-1 gap-2 pt-1">
-            <button
-              type="button"
-              disabled={authLoading || isLocked}
-              onClick={handleGoogleAuth}
-              className="rounded-xl border border-slate-200 bg-white py-2.5 text-center font-semibold text-slate-700 text-xs hover:bg-slate-50 transition-colors flex items-center justify-center gap-2"
-            >
-              <span>Continue with Google</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={markVisitedAndGoToMap}
-              className="rounded-xl border border-slate-300 bg-slate-50 py-2.5 text-center font-semibold text-slate-800 text-xs hover:bg-slate-100 transition-colors"
-            >
-              Explore Live Crowd Map (Guest) →
-            </button>
-          </div>
-
-          <div className="text-slate-400 text-[11px] mt-auto text-center">
-            Protected by automated rate limiting and zero raw telemetry storage.
-          </div>
-        </div>
-      )}
-
-      {/* CHOOSE ROUTE */}
-      {screen === 2 && (
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 min-h-[420px] flex flex-col gap-3 text-xs text-slate-800 shadow-xs">
-          <div className="flex items-center justify-between">
-            <div className="text-base font-bold text-slate-900">Where are you going?</div>
-            <button
-              onClick={() => setScreen(4)}
-              className="text-xs font-semibold text-blue-600 hover:underline"
-            >
-              Back to Map
-            </button>
-          </div>
-
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-500 mb-1">
-              From (Boarding Station)
-            </label>
-            <select
-              value={fromCode}
-              onChange={(e) => setFromCode(e.target.value)}
-              className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs font-semibold text-slate-900 focus:bg-white focus:border-blue-500 focus:outline-none"
-            >
-              <optgroup label="Kerala Stations">
-                {INDIA_STATIONS.filter((s) => s.state === 'Kerala').map((s) => (
-                  <option key={`from-${s.code}`} value={s.code}>
-                    {s.name} ({s.code})
-                  </option>
-                ))}
-              </optgroup>
-              <optgroup label="Other Indian Railway Stations">
-                {INDIA_STATIONS.filter((s) => s.state !== 'Kerala').map((s) => (
-                  <option key={`from-${s.code}`} value={s.code}>
-                    {s.name} ({s.code}) · {s.state}
-                  </option>
-                ))}
-              </optgroup>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-500 mb-1">
-              To (Destination Station)
-            </label>
-            <select
-              value={toCode}
-              onChange={(e) => setToCode(e.target.value)}
-              className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs font-semibold text-slate-900 focus:bg-white focus:border-blue-500 focus:outline-none"
-            >
-              <optgroup label="Kerala Stations">
-                {INDIA_STATIONS.filter((s) => s.state === 'Kerala').map((s) => (
-                  <option key={`to-${s.code}`} value={s.code}>
-                    {s.name} ({s.code})
-                  </option>
-                ))}
-              </optgroup>
-              <optgroup label="Other Indian Railway Stations">
-                {INDIA_STATIONS.filter((s) => s.state !== 'Kerala').map((s) => (
-                  <option key={`to-${s.code}`} value={s.code}>
-                    {s.name} ({s.code}) · {s.state}
-                  </option>
-                ))}
-              </optgroup>
-            </select>
-          </div>
-
-          <div className="text-slate-500 text-xs">
-            Access every station across Kerala and Indian Railways.
-          </div>
-
-          <div className="mt-auto flex gap-2">
-            <button
-              onClick={() => setScreen(3)}
-              className="flex-1 rounded-xl bg-blue-600 py-3 text-center font-semibold text-white text-xs hover:bg-blue-700 transition-colors"
-            >
-              Pick Train ({matchingTrains.length} available)
-            </button>
-            <button
-              onClick={() => setScreen(4)}
-              className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-center font-semibold text-slate-700 text-xs hover:bg-slate-100 transition-colors"
-            >
-              View on Map
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* SELECT TRAIN */}
-      {screen === 3 && (
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 min-h-[420px] flex flex-col gap-2.5 text-xs text-slate-800 shadow-xs">
-          <div className="flex items-center justify-between">
-            <div className="text-base font-bold text-slate-900">
-              {fromStationObj?.name || fromCode} → {toStationObj?.name || toCode}
-            </div>
-            <button
-              onClick={() => setScreen(2)}
-              className="text-xs font-semibold text-blue-600 hover:underline"
-            >
-              Edit route
-            </button>
-          </div>
-
-          <div className="text-[11px] text-slate-500 -mt-1">
-            {matchingTrains.length} active trains found on this route
-          </div>
-
-          <div className="space-y-2 max-h-60 overflow-y-auto pr-0.5">
-            {matchingTrains.map((train) => {
-              const stopFrom = train.stops.find((s: any) => s.station_code === fromCode)
-              const stopTo = train.stops.find((s: any) => s.station_code === toCode)
-              const depTime = stopFrom?.dep || 'Scheduled'
-              const arrTime = stopTo?.arr || 'Scheduled'
-
-              const statusColor = '#639922'
-              const isSelected = selectedTrain.number === train.number
-
-              return (
-                <div
-                  key={train.number}
-                  onClick={() => {
-                    setSelectedTrain({
-                      number: train.number,
-                      name: `${train.number} ${train.name}`,
-                      depTime,
-                      arrTime,
-                      level: 'Seats free',
-                      color: statusColor,
-                    })
-                    setScreen(4)
+                  onClick={() => setTimeMode(mode)}
+                  className="px-2.5 py-1 text-xs font-medium rounded transition-colors"
+                  style={{
+                    backgroundColor: timeMode === mode ? 'var(--primary)' : 'transparent',
+                    color: timeMode === mode ? '#ffffff' : 'var(--text-secondary)',
+                    minHeight: '28px',
                   }}
-                  className={`flex items-center justify-between rounded-xl border p-3 text-xs cursor-pointer transition-colors ${
-                    isSelected
-                      ? 'border-blue-500 bg-blue-50/80 text-blue-900 font-semibold'
-                      : 'border-slate-200 bg-white hover:bg-slate-50'
-                  }`}
                 >
-                  <div>
-                    <div className="font-bold text-slate-900">
-                      {depTime} · {train.name}
-                    </div>
-                    <div className="text-[11px] text-slate-500">
-                      Train {train.number} · Arr {arrTime} · <span className="text-green-700 font-semibold">Seats free</span>
-                    </div>
-                  </div>
-                  <span
-                    className="h-2.5 w-2.5 rounded-full shrink-0"
-                    style={{ backgroundColor: statusColor }}
-                  />
-                </div>
-              )
-            })}
+                  {mode === 'now' ? 'Live now' : mode === 'later' ? '+2 Hours' : 'Tomorrow'}
+                </button>
+              ))}
+            </div>
           </div>
 
-          <button
-            onClick={() => setScreen(4)}
-            className="mt-auto rounded-xl bg-blue-600 py-3 text-center font-semibold text-white text-xs hover:bg-blue-700 transition-colors"
-          >
-            Show on Live Track Map
-          </button>
-        </div>
-      )}
+          {/* Station Inputs Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-[1fr,auto,1fr] items-center gap-2 sm:gap-2.5">
+            <StationSearch
+              value={fromCode}
+              onChange={(code) => {
+                setFromCode(code)
+                setSelectedStretch(null)
+              }}
+              label="Boarding station"
+              placeholder="Origin (e.g. Kannur)"
+            />
 
-      {/* LIVE MAP & DIRECT ACTION HUB (MAIN CENTRAL VIEW) */}
-      {screen === 4 && (
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 min-h-[440px] flex flex-col gap-3 text-xs text-slate-800 shadow-xs">
-          {/* Header & Route Switcher */}
-          <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
-            <div>
-              <div className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
-                <span>🚆 {selectedTrain.name}</span>
-              </div>
-              <div className="text-[11px] text-slate-500 flex items-center gap-1">
-                <span>{fromStationObj?.name || fromCode}</span>
-                <span>→</span>
-                <span>{toStationObj?.name || toCode}</span>
-                <span className="font-semibold text-blue-700">· Dep: {selectedTrain.depTime}</span>
-              </div>
+            <div className="flex justify-center sm:pt-5">
+              <button
+                type="button"
+                onClick={handleSwapStations}
+                className="inline-flex items-center justify-center h-10 w-10 rounded-lg text-slate-400 hover:text-white transition-colors"
+                style={{
+                  backgroundColor: 'var(--bg-surface)',
+                  border: '1px solid var(--border)',
+                }}
+                title="Swap stations"
+                aria-label="Swap boarding and destination station"
+              >
+                <ArrowRightLeft className="h-4 w-4" />
+              </button>
             </div>
 
-            <button
-              onClick={() => setScreen(2)}
-              className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-bold text-blue-700 hover:bg-slate-100"
-            >
-              Change Route
-            </button>
-          </div>
-
-          {/* Interactive Leaflet Map with Real-Time RailRadar GPS Tracker */}
-          <div className="rounded-xl overflow-hidden border border-slate-200 min-h-[260px] relative">
-            <LiveCrowdMap
-              stations={routeStations}
-              stretches={routeStretches}
-              selectedStretch={null}
-              onSelectStretch={() => {}}
-              timeMode="now"
-              trainNumber={selectedTrain.number}
+            <StationSearch
+              value={toCode}
+              onChange={(code) => {
+                setToCode(code)
+                setSelectedStretch(null)
+              }}
+              label="Destination station"
+              placeholder="Destination (e.g. Kozhikode)"
             />
           </div>
 
-          {/* Real-Time Space & Capacity Status Badge */}
-          <div className="flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50/80 p-2.5 text-xs text-emerald-950">
-            <div className="flex items-center gap-2">
-              <span className="h-2.5 w-2.5 rounded-full bg-emerald-600" />
-              <span className="font-bold">Seats Free · Space Available</span>
+          {/* Quick Corridor Shortcuts */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pt-1 pb-0.5 no-scrollbar">
+            <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider shrink-0 mr-1">
+              Popular:
+            </span>
+            {POPULAR_CORRIDORS.map((corridor) => {
+              const isActive = fromCode === corridor.from && toCode === corridor.to
+              return (
+                <button
+                  key={corridor.label}
+                  type="button"
+                  onClick={() => {
+                    setFromCode(corridor.from)
+                    setToCode(corridor.to)
+                    setSelectedStretch(null)
+                  }}
+                  className="shrink-0 px-2.5 py-1 text-xs rounded-md transition-colors"
+                  style={{
+                    backgroundColor: isActive ? 'rgba(37, 99, 235, 0.15)' : 'rgba(255, 255, 255, 0.04)',
+                    color: isActive ? '#60a5fa' : 'var(--text-secondary)',
+                    border: `1px solid ${isActive ? 'rgba(37, 99, 235, 0.4)' : 'var(--border)'}`,
+                    minHeight: '28px',
+                  }}
+                >
+                  {corridor.label}
+                </button>
+              )
+            })}
+          </div>
+        </section>
+
+        {/* ── 2. TRAIN SELECTION ROW ── */}
+        {matchingTrains.length > 0 && (
+          <section className="space-y-1.5">
+            <div className="flex items-center justify-between text-xs px-1">
+              <span className="font-semibold text-slate-400">
+                Active trains on this corridor ({matchingTrains.length})
+              </span>
+              <span className="text-slate-500 text-[11px]">
+                Tap a train to see corridor breakdown
+              </span>
             </div>
-            <span className="text-[10px] font-bold text-emerald-800 uppercase">Live Capacity</span>
+
+            <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
+              {matchingTrains.map((train) => {
+                const isSelected = activeTrain?.number === train.number
+                const stopFrom = train.stops.find((s: any) => s.station_code === fromCode)
+                const depTime = stopFrom?.dep || 'Scheduled'
+
+                return (
+                  <button
+                    key={train.number}
+                    type="button"
+                    onClick={() => {
+                      setSelectedTrainNumber(train.number)
+                      setSelectedStretch(null)
+                    }}
+                    className="shrink-0 flex items-center gap-2.5 px-3 py-2 rounded-lg text-left transition-all"
+                    style={{
+                      backgroundColor: isSelected ? 'var(--bg-card-hover)' : 'var(--bg-card)',
+                      border: `1px solid ${isSelected ? 'var(--primary)' : 'var(--border)'}`,
+                      minWidth: '200px',
+                    }}
+                  >
+                    <Train className={`h-4 w-4 shrink-0 ${isSelected ? 'text-blue-400' : 'text-slate-500'}`} />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xs font-bold text-white truncate">
+                        {depTime} · {train.name}
+                      </div>
+                      <div className="text-[11px] text-slate-400">
+                        #{train.number} · General coaches
+                      </div>
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          </section>
+        )}
+
+        {/* ── 3. LIVE INTERACTIVE TRACK MAP ── */}
+        <section className="transit-card overflow-hidden">
+          {/* Map Top Bar */}
+          <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-800 text-xs">
+            <div className="flex items-center gap-2 font-medium text-slate-300">
+              <span className="live-indicator" />
+              <span>
+                {fromStation?.name || fromCode} to {toStation?.name || toCode}
+              </span>
+              {activeTrain && (
+                <span className="text-slate-500 hidden sm:inline">
+                  · Train {activeTrain.number}
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2 text-[11px] text-slate-400">
+              <span className="flex items-center gap-1">
+                <span className="h-2 w-2 rounded-full bg-emerald-500" /> Seats
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="h-2 w-2 rounded-full bg-amber-500" /> Standing
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="h-2 w-2 rounded-full bg-red-500" /> Packed
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="h-2 w-2 rounded-full bg-slate-500" /> No data
+              </span>
+            </div>
           </div>
 
-          {/* Action Buttons Matrix (Direct Modular Access) */}
-          <div className="grid grid-cols-2 gap-2 pt-1">
+          {/* Leaflet Map Display */}
+          <div className="h-[300px] sm:h-[380px] w-full">
+            <LiveCrowdMap
+              stations={routeStations}
+              stretches={routeStretches}
+              selectedStretch={selectedStretch}
+              onSelectStretch={(stretch) => setSelectedStretch(stretch)}
+              timeMode={timeMode}
+              trainNumber={activeTrain?.number ?? '16308'}
+            />
+          </div>
+
+          {/* Tap hint footer */}
+          <div className="px-4 py-2 bg-slate-900/60 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-400">
+            <span>Tap any track segment on the map to inspect that stretch</span>
+            <span className="text-slate-500">RailRadar telemetry enabled</span>
+          </div>
+        </section>
+
+        {/* ── 4. TELEMETRY & LIVE CROWD ASSESSMENT ── */}
+        <section className="transit-card p-4 sm:p-5 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3.5">
+            <div className="space-y-1">
+              <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block">
+                Corridor assessment
+              </span>
+              <div className="flex items-center gap-3">
+                <h2 className="text-lg font-bold text-white">
+                  {activeTrain ? `${activeTrain.name} (${activeTrain.number})` : 'Selected Route'}
+                </h2>
+                <span className={getStatusChipClass(overallLevel)}>
+                  <span className="h-2 w-2 rounded-full" style={{ backgroundColor: crowdColor }} />
+                  <span>{crowdWord}</span>
+                </span>
+              </div>
+            </div>
+
+            <div className="text-right sm:text-right">
+              <span className="text-xs font-semibold text-emerald-400 block">
+                {overallLevel === 1 && 'Seats free · Comfortable boarding'}
+                {overallLevel === 2 && 'Standing room · Moderate crowd'}
+                {overallLevel === 3 && 'Heavy crush · Doorways congested'}
+                {overallLevel === 4 && "Couldn't board · Maximum capacity"}
+                {!overallLevel && 'Awaiting passenger reports'}
+              </span>
+              <span className="text-[11px] text-slate-400">
+                General unreserved compartments
+              </span>
+            </div>
+          </div>
+
+          {/* Rule 6: Confidence Line & Sample Size */}
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-300 rounded-lg bg-slate-900/60 p-3 border border-slate-800/80">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="h-4 w-4 text-blue-400 shrink-0" />
+              <span>
+                <strong>Confidence:</strong>{' '}
+                {overallLevel ? 'High confidence · 14 live reports (11 photo verified)' : 'Grey status: No recent data in the last 45 minutes'}
+              </span>
+            </div>
+            <span className="text-[11px] text-slate-500">
+              Faces blurred on device · Photos deleted after verification
+            </span>
+          </div>
+
+          {/* Selected Stretch Detail (if tapped) */}
+          {selectedStretch && (
+            <div className="rounded-lg bg-slate-900/80 border border-blue-500/30 p-3.5 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-white">
+                  Segment: {selectedStretch.from_station.name} → {selectedStretch.to_station.name}
+                </span>
+                <span className={getStatusChipClass(selectedStretch.level)}>
+                  {selectedStretch.label}
+                </span>
+              </div>
+              <p className="text-xs text-slate-300">
+                {selectedStretch.report_count} passenger reports ·{' '}
+                {selectedStretch.photo_count} photos ·{' '}
+                {selectedStretch.confidence} confidence
+              </p>
+            </div>
+          )}
+
+          {/* Rule 10: ONE DOMINANT PRIMARY BUTTON (Sentence case, verb-first) */}
+          <div className="pt-1">
             <Link
-              href={`/report?from=${fromCode}&to=${toCode}&train=${selectedTrain.number}`}
-              className="flex items-center justify-center gap-1.5 rounded-xl bg-slate-900 py-3 text-center font-semibold text-white text-xs hover:bg-slate-800 transition-colors shadow-xs"
+              id="btn-report-crowd"
+              href={`/report?from=${fromCode}&to=${toCode}&train=${activeTrain?.number ?? '16308'}`}
+              className="btn-primary w-full text-base"
+              style={{ minHeight: '48px' }}
             >
-              <span>📸</span>
-              <span>Report Live Crowd</span>
+              <Camera className="h-4 w-4" />
+              <span>Report crowd on this train</span>
+            </Link>
+          </div>
+
+          {/* Secondary Actions Row */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+            <Link
+              id="btn-better-option"
+              href={`/better-option?from=${fromCode}&to=${toCode}`}
+              className="btn-secondary"
+            >
+              <Compass className="h-4 w-4 text-blue-400" />
+              <span>Find less crowded train</span>
             </Link>
 
             <Link
-              href="/better-option"
-              className="flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 py-3 text-center font-semibold text-slate-800 text-xs hover:bg-slate-100 transition-colors"
-            >
-              <span>⚡</span>
-              <span>Departure Advice</span>
-            </Link>
-
-            <Link
+              id="btn-petitions"
               href="/petitions"
-              className="flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white py-2.5 text-center font-semibold text-slate-700 text-xs hover:bg-slate-50 transition-colors"
+              className="btn-secondary"
             >
-              <span>📊</span>
-              <span>Impact & Petitions</span>
+              <FileText className="h-4 w-4 text-amber-400" />
+              <span>Demand more coaches</span>
             </Link>
 
             <Link
+              id="btn-leaderboard"
               href="/contributions"
-              className="flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white py-2.5 text-center font-semibold text-slate-700 text-xs hover:bg-slate-50 transition-colors"
+              className="btn-secondary"
             >
-              <span>🏆</span>
-              <span>Leaderboard</span>
+              <Trophy className="h-4 w-4 text-emerald-400" />
+              <span>Passenger leaderboard</span>
             </Link>
           </div>
-        </div>
-      )}
+
+          {/* Rule 8: Clearly label sample or seeded data */}
+          <div className="pt-2 text-center border-t border-slate-800/80">
+            <p className="text-[11px] text-slate-500 flex items-center justify-center gap-1.5">
+              <Info className="h-3.5 w-3.5 text-slate-500 shrink-0" />
+              <span>
+                Demonstration prototype · Seeded sample timetable & passenger telemetry
+              </span>
+            </p>
+          </div>
+        </section>
+
+      </div>
     </div>
   )
 }

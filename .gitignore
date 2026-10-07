@@ -36,3 +36,6 @@ app/.env
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# ide / agents
+.agents/
