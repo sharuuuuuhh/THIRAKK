@@ -1,22 +1,18 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useAuth } from '@/lib/auth-context'
 import {
-  Award,
   Flame,
   CheckCircle2,
-  TrendingUp,
   Camera,
   Train,
-  MapPin,
   Calendar,
-  ShieldCheck,
   ArrowLeft,
-  Trophy,
 } from 'lucide-react'
-import { CROWD_LABELS, CROWD_COLORS } from '@/lib/types'
+import { CROWD_LABELS } from '@/lib/types'
+import { getIndiaDateKey, shiftDateKey } from '@/lib/india-date'
 
 interface HeatmapDay {
   date: string
@@ -29,141 +25,90 @@ interface ContributionItem {
   trainNumber: string
   stationCode: string
   level: number
-  photoMatch: string
-  points: number
   timestamp: number
   travelDate: string
 }
 
-interface LeaderboardItem {
-  rank: number
-  name: string
-  reports: number
-  points: number
-  badge: string
-  isCurrentUser?: boolean
-}
-
 export default function ContributionsPage() {
-  const { user, userEmail, commuterId } = useAuth()
+  const { session } = useAuth()
 
-  const [loading, setLoading] = useState(true)
   const [stats, setStats] = useState({
     totalReports: 0,
-    totalPoints: 0,
     streakDays: 0,
-    rank: 1,
-    badge: 'Commuter',
+    badge: 'New commuter',
   })
   const [heatmap, setHeatmap] = useState<HeatmapDay[][]>([])
   const [recentReports, setRecentReports] = useState<ContributionItem[]>([])
-  const [leaderboard, setLeaderboard] = useState<LeaderboardItem[]>([])
+  const [loadError, setLoadError] = useState(false)
 
-  const fetchContributions = async () => {
-    setLoading(true)
+  const fetchContributions = useCallback(async () => {
+    const buildDefaultHeatmap = (reports: ContributionItem[]) => {
+      const today = getIndiaDateKey()
+      const weeks: HeatmapDay[][] = []
+      const datesMap = new Map<string, { count: number; level: number }>()
+      reports.forEach((report) => {
+        const date = report.travelDate || getIndiaDateKey(new Date(report.timestamp))
+        const existing = datesMap.get(date) || { count: 0, level: report.level }
+        datesMap.set(date, { count: existing.count + 1, level: report.level })
+      })
+      for (let weekOffset = 9; weekOffset >= 0; weekOffset--) {
+        const week: HeatmapDay[] = []
+        for (let dayOffset = 6; dayOffset >= 0; dayOffset--) {
+          const key = shiftDateKey(today, -(weekOffset * 7 + dayOffset))
+          const entry = datesMap.get(key)
+          week.push({ date: key, count: entry?.count ?? 0, level: entry?.level ?? 0 })
+        }
+        weeks.push(week)
+      }
+      setHeatmap(weeks)
+    }
+
     try {
-      const emailParam = userEmail ? encodeURIComponent(userEmail) : ''
-      const devParam = commuterId || 'dev-anon'
-      const res = await fetch(`/api/contributions?email=${emailParam}&deviceHash=${devParam}`)
+      const res = await fetch('/api/contributions', {
+        headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {},
+      })
+      if (!res.ok) throw new Error('Could not load contribution history')
       const data = await res.json()
 
-      let localReports: ContributionItem[] = []
-      try {
-        const raw = localStorage.getItem('thirakku_contributions_list')
-        if (raw) localReports = JSON.parse(raw)
-      } catch (e) {}
-
       if (data.success) {
-        const mergedRecent = [...localReports, ...(data.recentReports || [])]
-        const uniqueRecent = Array.from(new Map(mergedRecent.map((item) => [item.id || item.timestamp, item])).values())
-
-        const totalReps = Math.max(data.userStats?.totalReports || 0, uniqueRecent.length)
-        const totalPts = Math.max(data.userStats?.totalPoints || 0, uniqueRecent.reduce((s, r) => s + (r.points || 15), 0))
+        const reports: ContributionItem[] = data.recentReports || []
+        const totalReps = data.userStats?.totalReports || 0
 
         setStats({
           totalReports: totalReps,
-          totalPoints: totalPts,
-          streakDays: totalReps > 0 ? Math.min(totalReps, 7) : 0,
-          rank: totalReps > 40 ? 1 : totalReps > 25 ? 3 : totalReps > 0 ? 5 : 7,
-          badge: totalReps >= 10 ? 'Verified Scout' : totalReps > 0 ? 'Active Reporter' : 'Commuter',
+          streakDays: data.userStats?.streakDays ?? 0,
+          badge: data.userStats?.badge ?? 'New commuter',
         })
+        setLoadError(false)
 
         if (data.heatmap && data.heatmap.length > 0) {
           const updatedHeatmap = [...data.heatmap]
-          if (uniqueRecent.length > 0 && updatedHeatmap[9]) {
-            const todayStr = new Date().toISOString().split('T')[0]
-            const todaySlot = updatedHeatmap[9].find((d: HeatmapDay) => d.date === todayStr)
-            if (todaySlot && todaySlot.count === 0) {
-              todaySlot.count = uniqueRecent.length
-              todaySlot.level = uniqueRecent[0].level || 2
-            }
-          }
           setHeatmap(updatedHeatmap)
         } else {
-          buildDefaultHeatmap(uniqueRecent)
+          buildDefaultHeatmap(reports)
         }
 
-        setRecentReports(uniqueRecent.slice(0, 10))
-        setLeaderboard(data.leaderboard || [])
+        setRecentReports(reports.slice(0, 10))
       } else {
-        buildDefaultHeatmap(localReports)
+        throw new Error('Could not load contribution history')
       }
-    } catch (err) {
-      let localReports: ContributionItem[] = []
-      try {
-        const raw = localStorage.getItem('thirakku_contributions_list')
-        if (raw) localReports = JSON.parse(raw)
-      } catch (e) {}
-
-      const totalReps = localReports.length
-      const totalPts = localReports.reduce((s, r) => s + (r.points || 15), 0)
-
+    } catch {
       setStats({
-        totalReports: totalReps,
-        totalPoints: totalPts,
-        streakDays: totalReps > 0 ? Math.min(totalReps, 7) : 0,
-        rank: totalReps > 0 ? 5 : 7,
-        badge: totalReps > 0 ? 'Active Reporter' : 'Commuter',
+        totalReports: 0,
+        streakDays: 0,
+        badge: 'New commuter',
       })
-      setRecentReports(localReports)
-      buildDefaultHeatmap(localReports)
-    } finally {
-      setLoading(false)
+      setRecentReports([])
+      buildDefaultHeatmap([])
+      setLoadError(true)
     }
-  }
-
-  const buildDefaultHeatmap = (reports: ContributionItem[]) => {
-    const now = new Date()
-    const weeks: HeatmapDay[][] = []
-    const datesMap = new Map<string, { count: number; level: number }>()
-
-    reports.forEach((r) => {
-      const d = r.travelDate || new Date(r.timestamp).toISOString().split('T')[0]
-      const existing = datesMap.get(d) || { count: 0, level: r.level }
-      datesMap.set(d, { count: existing.count + 1, level: r.level })
-    })
-
-    for (let w = 9; w >= 0; w--) {
-      const week: HeatmapDay[] = []
-      for (let d = 6; d >= 0; d--) {
-        const dayDate = new Date(now)
-        dayDate.setDate(now.getDate() - (w * 7 + d))
-        const dateStr = dayDate.toISOString().split('T')[0]
-        const rec = datesMap.get(dateStr)
-        week.push({
-          date: dateStr,
-          count: rec ? rec.count : 0,
-          level: rec ? rec.level : 0,
-        })
-      }
-      weeks.push(week)
-    }
-    setHeatmap(weeks)
-  }
+  }, [session])
 
   useEffect(() => {
+    // Load the current user's remote contribution snapshot on session changes.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchContributions()
-  }, [userEmail, commuterId])
+  }, [fetchContributions])
 
   return (
     <div className="min-h-screen py-8 px-4 sm:px-6">
@@ -178,25 +123,27 @@ export default function ContributionsPage() {
             <span>Back to live crowd map</span>
           </Link>
           <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-            Passenger Scout Program
+            Contribution history
           </span>
         </div>
 
         {/* Header Hero */}
         <div className="transit-card p-5 sm:p-6 space-y-2">
           <div className="flex items-center gap-2 text-emerald-400">
-            <Trophy className="h-5 w-5" />
+            <Train className="h-5 w-5" />
             <h1 className="text-lg sm:text-xl font-bold text-white tracking-tight">
-              Passenger contributions & scout leaderboard
+              Your crowd reports
             </h1>
           </div>
           <p className="text-xs text-slate-400 max-w-xl">
-            Every camera-verified crowd report contributes verifiable evidence for DRM advocacy and helps daily commuters board safely.
+            Review the unverified crowd reports you have shared. Photos stay on your device and are not analyzed.
           </p>
         </div>
 
-        {/* 4 Stat Cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {/* Contribution summary */}
+        {loadError && <p role="status" className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">Contribution history is temporarily unavailable. Try again shortly.</p>}
+
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           <div className="transit-card p-4 space-y-1">
             <div className="flex items-center justify-between text-slate-400 text-xs">
               <span>Reports logged</span>
@@ -206,51 +153,32 @@ export default function ContributionsPage() {
               {stats.totalReports}
             </div>
             <span className="text-[10px] text-slate-500 block">
-              {stats.totalReports > 0 ? 'Photo-verified' : 'Awaiting first report'}
+              {stats.totalReports > 0 ? 'Unverified passenger reports' : 'Awaiting first report'}
             </span>
           </div>
 
           <div className="transit-card p-4 space-y-1">
             <div className="flex items-center justify-between text-slate-400 text-xs">
-              <span>Karma points</span>
-              <Award className="h-4 w-4 text-amber-400" />
-            </div>
-            <div className="text-2xl font-bold text-white mt-1">
-              {stats.totalPoints} <span className="text-xs font-normal text-slate-400">pts</span>
-            </div>
-            <span className="text-[10px] text-amber-400 block">
-              +15 pts per photo report
-            </span>
-          </div>
-
-          <div className="transit-card p-4 space-y-1">
-            <div className="flex items-center justify-between text-slate-400 text-xs">
-              <span>Active streak</span>
+              <span>Reporting streak</span>
               <Flame className="h-4 w-4 text-rose-400" />
             </div>
             <div className="text-2xl font-bold text-white mt-1">
               {stats.streakDays} <span className="text-xs font-normal text-slate-400">days</span>
             </div>
-            <span className="text-[10px] text-slate-500 block">
-              Daily commuter consistency
-            </span>
+            <span className="text-[10px] text-slate-500 block">Consecutive days with a report</span>
           </div>
 
           <div className="transit-card p-4 space-y-1">
             <div className="flex items-center justify-between text-slate-400 text-xs">
-              <span>Kerala rank</span>
-              <TrendingUp className="h-4 w-4 text-blue-400" />
+              <span>Reporter status</span>
+              <CheckCircle2 className="h-4 w-4 text-blue-400" />
             </div>
-            <div className="text-2xl font-bold text-white mt-1">
-              #{stats.rank}
-            </div>
-            <span className="text-[10px] text-blue-400 font-medium block">
-              {stats.badge}
-            </span>
+            <div className="text-lg font-semibold text-white mt-1">{stats.badge}</div>
+            <span className="text-[10px] text-slate-500 block">Based on your report count</span>
           </div>
         </div>
 
-        {/* 10-Week Report Consistency Heatmap */}
+        {/* 10-week report activity */}
         <div className="transit-card p-5 space-y-3">
           <div className="flex items-center justify-between">
             <div>
@@ -258,11 +186,11 @@ export default function ContributionsPage() {
                 10-week reporting consistency
               </h2>
               <p className="text-[11px] text-slate-400 mt-0.5">
-                Activity log of passenger crowd reports submitted across Kerala
+                Your passenger crowd reports by day
               </p>
             </div>
             <span className="text-[11px] text-emerald-400 font-semibold bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
-              {stats.totalReports} verified reports
+              {stats.totalReports} reports shared
             </span>
           </div>
 
@@ -302,16 +230,16 @@ export default function ContributionsPage() {
           </div>
         </div>
 
-        {/* Two Columns: Recent Reports & Leaderboard */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Left: Your Verified Reports */}
+        {/* Recent reports */}
+        <div className="space-y-4">
+          {/* Recent reports */}
           <div className="transit-card p-5 space-y-3 flex flex-col">
             <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
               <h2 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
-                <ShieldCheck className="h-4 w-4 text-emerald-400" />
-                <span>Your verified reports</span>
+                <Train className="h-4 w-4 text-emerald-400" />
+                <span>Your recent reports</span>
               </h2>
-              <span className="text-[11px] text-slate-500">Live feed</span>
+              <span className="text-[11px] text-slate-500">Saved reports</span>
             </div>
 
             {recentReports.length === 0 ? (
@@ -319,7 +247,7 @@ export default function ContributionsPage() {
                 <Train className="mx-auto h-7 w-7 text-slate-600" />
                 <p className="text-xs font-semibold text-slate-300">No reports logged yet</p>
                 <p className="text-[11px] text-slate-500 max-w-xs mx-auto">
-                  Take a quick live photo of your coach doorway or vestibule to verify crowd density.
+                  Submit a crowd level from a safe place. Photo analysis is currently unavailable.
                 </p>
                 <div className="pt-2">
                   <Link href="/report" className="btn-primary text-xs" style={{ minHeight: '36px' }}>
@@ -346,8 +274,8 @@ export default function ContributionsPage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
-                        +{rep.points || 15} pts
+                      <span className="text-[10px] font-bold text-slate-300 bg-slate-800 px-2 py-0.5 rounded border border-slate-700">
+                        {CROWD_LABELS[rep.level as keyof typeof CROWD_LABELS]} · Unverified
                       </span>
                     </div>
                   </div>
@@ -356,77 +284,6 @@ export default function ContributionsPage() {
             )}
           </div>
 
-          {/* Right: Kerala Leaderboard */}
-          <div className="transit-card p-5 space-y-3 flex flex-col">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
-              <h2 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
-                <Award className="h-4 w-4 text-amber-400" />
-                <span>Kerala commuter leaderboard</span>
-              </h2>
-              <span className="text-[10px] text-slate-400 font-semibold bg-slate-800 px-2 py-0.5 rounded">
-                This week
-              </span>
-            </div>
-
-            <div className="space-y-1.5">
-              {leaderboard.map((userRow) => {
-                const isMe = userRow.isCurrentUser
-                return (
-                  <div
-                    key={userRow.rank}
-                    className={`flex items-center justify-between p-2.5 rounded-lg border text-xs transition-colors ${
-                      isMe
-                        ? 'border-blue-500/40 bg-blue-500/10 text-white'
-                        : 'border-slate-800 bg-slate-900/50 text-slate-300'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <span
-                        className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold ${
-                          userRow.rank === 1
-                            ? 'bg-amber-400 text-amber-950'
-                            : userRow.rank === 2
-                            ? 'bg-slate-300 text-slate-900'
-                            : userRow.rank === 3
-                            ? 'bg-amber-700 text-white'
-                            : 'bg-slate-800 text-slate-400'
-                        }`}
-                      >
-                        {userRow.rank}
-                      </span>
-                      <div>
-                        <div className="font-semibold flex items-center gap-1 text-white">
-                          <span>{userRow.name}</span>
-                          {isMe && (
-                            <span className="rounded bg-blue-600 px-1 py-0.2 text-[9px] font-bold text-white">
-                              You
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-[10px] text-slate-500">{userRow.badge}</div>
-                      </div>
-                    </div>
-
-                    <div className="text-right">
-                      <div className="font-bold text-white">{userRow.points} pts</div>
-                      <div className="text-[10px] text-slate-500">{userRow.reports} reports</div>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-
-            <div className="mt-auto pt-3 border-t border-slate-800">
-              <Link
-                href="/report"
-                className="btn-primary w-full text-xs"
-                style={{ minHeight: '38px' }}
-              >
-                <Camera className="h-3.5 w-3.5" />
-                <span>Report train to climb rank</span>
-              </Link>
-            </div>
-          </div>
         </div>
       </div>
     </div>

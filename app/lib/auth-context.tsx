@@ -1,455 +1,195 @@
 'use client'
 
 import React, { createContext, useContext, useEffect, useState } from 'react'
-import {
-  signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
-  signInWithPopup,
-  signOut as firebaseSignOut,
-  onAuthStateChanged,
-  User as FirebaseUser,
-} from 'firebase/auth'
-import { auth, googleProvider } from './firebase'
-import { supabase } from './supabase'
-
-interface SecurityState {
-  failedAttempts: number
-  lockedUntil: number | null
-}
+import type { Session, User } from '@supabase/supabase-js'
+import { supabase, isSupabaseConfigured } from './supabase'
+import { getSafeAuthDestination } from './auth-redirect'
 
 interface AuthContextType {
-  user: any
-  session: any
+  user: User | null
+  session: Session | null
   userEmail: string | null
-  commuterId: string | null
   loading: boolean
-  isLocked: boolean
-  lockRemainingSeconds: number
-  signInWithGoogle: () => Promise<{ error: string | null }>
-  signInWithSupabaseGoogle: () => Promise<{ error: string | null }>
+  signInWithGoogle: (nextPath?: string) => Promise<{ error: string | null }>
   signInWithEmail: (email: string, password: string) => Promise<{ error: string | null }>
   signUpWithEmail: (
     email: string,
     password: string,
-    fullName?: string
-  ) => Promise<{ error: string | null }>
-  signOut: () => Promise<{ error: any }>
+    fullName?: string,
+    nextPath?: string
+  ) => Promise<{ error: string | null; requiresEmailConfirmation?: boolean }>
+  requestPasswordReset: (email: string) => Promise<{ error: string | null }>
+  updatePassword: (password: string) => Promise<{ error: string | null }>
+  signOut: () => Promise<{ error: string | null }>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
-const MAX_FAILED_ATTEMPTS = 5
-const LOCKOUT_DURATION_MS = 60 * 1000 // 60 seconds
+function configurationError() {
+  return 'Authentication is not configured. Add the Supabase URL and anon key to the environment, then reload.'
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<any>(null)
-  const [session, setSession] = useState<any>(null)
-  const [userEmail, setUserEmail] = useState<string | null>(null)
-  const [commuterId, setCommuterId] = useState<string | null>(null)
+  const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
 
-  // Security layer state
-  const [securityState, setSecurityState] = useState<SecurityState>({
-    failedAttempts: 0,
-    lockedUntil: null,
-  })
-  const [lockRemainingSeconds, setLockRemainingSeconds] = useState(0)
-
-  // Load existing session and security locks
   useEffect(() => {
     try {
-      const savedEmail = localStorage.getItem('thirakku_user_email')
-      const savedId = localStorage.getItem('thirakku_commuter_id')
-      if (savedEmail) setUserEmail(savedEmail)
-      if (savedId) setCommuterId(savedId)
-      else {
-        const genId = 'commuter_' + Math.random().toString(36).substring(2, 9)
-        localStorage.setItem('thirakku_commuter_id', genId)
-        setCommuterId(genId)
-      }
+      // Remove credentials saved by the old local-only sign-in flow.
+      localStorage.removeItem('thirakku_registered_accounts')
+      localStorage.removeItem('thirakku_user_email')
+      localStorage.removeItem('thirakku_commuter_id')
 
-      // Check lockout state
-      const savedLock = localStorage.getItem('thirakku_auth_lock')
-      if (savedLock) {
-        const lockTime = parseInt(savedLock, 10)
-        if (lockTime > Date.now()) {
-          setSecurityState({ failedAttempts: MAX_FAILED_ATTEMPTS, lockedUntil: lockTime })
-        }
-      }
-    } catch (e) {}
-
-    // 1. Listen for Supabase Auth changes
-    const { data: authListener } = supabase.auth.onAuthStateChange(
-      async (event, sbSession) => {
-        if (sbSession?.user) {
-          setSession(sbSession)
-          setUser(sbSession.user)
-          if (sbSession.user.email) {
-            setUserEmail(sbSession.user.email)
-            try {
-              localStorage.setItem('thirakku_user_email', sbSession.user.email)
-            } catch (e) {}
-          }
-          setLoading(false)
-        }
-      }
-    )
-
-    // 2. Listen for Firebase Auth changes
-    const unsubscribeFirebase = onAuthStateChanged(auth, (fbUser: FirebaseUser | null) => {
-      if (fbUser) {
-        setUser(fbUser)
-        if (fbUser.email) {
-          setUserEmail(fbUser.email)
-          try {
-            localStorage.setItem('thirakku_user_email', fbUser.email)
-          } catch (e) {}
-        }
-        setLoading(false)
-      } else {
-        // Check Supabase session fallback
-        supabase.auth.getSession().then(({ data: { session: sbSession } }) => {
-          if (sbSession?.user) {
-            setSession(sbSession)
-            setUser(sbSession.user)
-            if (sbSession.user.email) {
-              setUserEmail(sbSession.user.email)
-            }
-          }
-          setLoading(false)
-        })
-      }
-    })
-
-    return () => {
-      authListener?.subscription?.unsubscribe()
-      unsubscribeFirebase()
+    } catch {
+      // Local storage may be unavailable; authentication can still initialize.
     }
-  }, [])
 
-  // Lockout countdown timer
-  useEffect(() => {
-    if (!securityState.lockedUntil) {
-      setLockRemainingSeconds(0)
+    if (!isSupabaseConfigured) {
+      // Resolve the initial auth state when this deployment has no Supabase credentials.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setLoading(false)
       return
     }
 
-    const interval = setInterval(() => {
-      const remaining = Math.max(0, Math.ceil((securityState.lockedUntil! - Date.now()) / 1000))
-      setLockRemainingSeconds(remaining)
-
-      if (remaining <= 0) {
-        setSecurityState({ failedAttempts: 0, lockedUntil: null })
-        try {
-          localStorage.removeItem('thirakku_auth_lock')
-        } catch (e) {}
+    let mounted = true
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      if (mounted) {
+        setSession(nextSession)
+        setLoading(false)
       }
-    }, 1000)
+    })
 
-    return () => clearInterval(interval)
-  }, [securityState.lockedUntil])
+    supabase.auth.getSession().then(({ data, error }) => {
+      if (!mounted) return
+      if (error) console.error('Could not restore the Supabase session:', error.message)
+      setSession(data.session)
+      setLoading(false)
+    }).catch((error: unknown) => {
+      if (!mounted) return
+      console.error('Could not restore the Supabase session:', error)
+      setLoading(false)
+    })
 
-  const recordFailedAttempt = () => {
-    const nextAttempts = securityState.failedAttempts + 1
-    if (nextAttempts >= MAX_FAILED_ATTEMPTS) {
-      const lockUntil = Date.now() + LOCKOUT_DURATION_MS
-      setSecurityState({ failedAttempts: nextAttempts, lockedUntil: lockUntil })
-      try {
-        localStorage.setItem('thirakku_auth_lock', lockUntil.toString())
-      } catch (e) {}
-    } else {
-      setSecurityState({ failedAttempts: nextAttempts, lockedUntil: null })
+    return () => {
+      mounted = false
+      listener.subscription.unsubscribe()
     }
-  }
+  }, [])
 
-  const resetFailedAttempts = () => {
-    setSecurityState({ failedAttempts: 0, lockedUntil: null })
-    try {
-      localStorage.removeItem('thirakku_auth_lock')
-    } catch (e) {}
-  }
-
-  const isLocked = securityState.lockedUntil !== null && securityState.lockedUntil > Date.now()
-
-  // Google OAuth via Supabase
-  const signInWithSupabaseGoogle = async (): Promise<{ error: string | null }> => {
-    if (isLocked) {
-      return { error: `Account login temporarily locked due to security policy. Please wait ${lockRemainingSeconds}s.` }
-    }
+  const signInWithGoogle = async (nextPath = '/'): Promise<{ error: string | null }> => {
+    if (!isSupabaseConfigured) return { error: configurationError() }
 
     try {
-      const origin = typeof window !== 'undefined' ? window.location.origin : ''
+      const destination = getSafeAuthDestination(nextPath)
+      const redirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent(destination)}`
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
-        options: {
-          redirectTo: `${origin}/auth/callback`,
-          queryParams: {
-            access_type: 'offline',
-            prompt: 'consent',
-          },
-        },
+        options: { redirectTo },
       })
-      if (error) throw error
-      resetFailedAttempts()
-      return { error: null }
-    } catch (sbErr: any) {
-      return { error: sbErr.message || 'Supabase Google sign-in failed' }
+      return { error: error?.message ?? null }
+    } catch {
+      return { error: 'Could not start Google sign-in. Check your connection and try again.' }
     }
   }
 
-  // Google OAuth Login (Supabase layer + Firebase fallback)
-  const signInWithGoogle = async (): Promise<{ error: string | null }> => {
-    if (isLocked) {
-      return { error: `Account login temporarily locked due to security policy. Please wait ${lockRemainingSeconds}s.` }
-    }
+  const signInWithEmail = async (
+    email: string,
+    password: string
+  ): Promise<{ error: string | null }> => {
+    if (!isSupabaseConfigured) return { error: configurationError() }
+    if (!email.trim() || !password) return { error: 'Enter your email and password.' }
 
-    // 1. Try Supabase Google OAuth
-    if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-      try {
-        const origin = typeof window !== 'undefined' ? window.location.origin : ''
-        const { error } = await supabase.auth.signInWithOAuth({
-          provider: 'google',
-          options: {
-            redirectTo: `${origin}/auth/callback`,
-          },
-        })
-        if (!error) {
-          resetFailedAttempts()
-          return { error: null }
-        }
-      } catch (sbErr) {}
-    }
-
-    // 2. Try Firebase Google Popup
     try {
-      const result = await signInWithPopup(auth, googleProvider)
-      if (result.user) {
-        setUser(result.user)
-        const email = result.user.email || 'passenger@gmail.com'
-        setUserEmail(email)
-        try {
-          localStorage.setItem('thirakku_user_email', email)
-        } catch (e) {}
-        resetFailedAttempts()
-        return { error: null }
-      }
-    } catch (fbErr: any) {
-      recordFailedAttempt()
-      return { error: fbErr.message || 'Google sign-in error' }
-    }
-
-    return { error: null }
-  }
-
-  function getRegisteredAccounts(): Record<string, string> {
-    if (typeof window === 'undefined') return {}
-    try {
-      const raw = localStorage.getItem('thirakku_registered_accounts')
-      return raw ? JSON.parse(raw) : {}
-    } catch (e) {
-      return {}
+      const { error } = await supabase.auth.signInWithPassword({
+        email: email.trim().toLowerCase(),
+        password,
+      })
+      return { error: error?.message ?? null }
+    } catch {
+      return { error: 'Could not sign in. Check your connection and try again.' }
     }
   }
 
-  function saveRegisteredAccount(email: string, pass: string) {
-    if (typeof window === 'undefined') return
-    try {
-      const accounts = getRegisteredAccounts()
-      accounts[email.toLowerCase()] = pass
-      localStorage.setItem('thirakku_registered_accounts', JSON.stringify(accounts))
-    } catch (e) {}
-  }
-
-  // Email & Password Sign In (Strict & Reliable Authentication)
-  const signInWithEmail = async (email: string, password: string): Promise<{ error: string | null }> => {
-    if (isLocked) {
-      return { error: `Security Lock Active: Too many failed attempts. Try again in ${lockRemainingSeconds}s.` }
-    }
-
-    const cleanEmail = email.trim().toLowerCase()
-    if (!cleanEmail || !password) {
-      return { error: 'Please enter both your email address and password.' }
-    }
-
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-    if (!emailRegex.test(cleanEmail)) {
-      return { error: 'Please enter a valid email address (e.g., yourname@gmail.com).' }
-    }
-
-    // 1. Check local registered accounts registry
-    const registered = getRegisteredAccounts()
-    if (registered[cleanEmail]) {
-      if (registered[cleanEmail] === password) {
-        setUser({ email: cleanEmail, id: 'user_' + cleanEmail.split('@')[0] })
-        setUserEmail(cleanEmail)
-        try {
-          localStorage.setItem('thirakku_user_email', cleanEmail)
-        } catch (e) {}
-        resetFailedAttempts()
-        return { error: null }
-      } else {
-        recordFailedAttempt()
-        return { error: 'Incorrect password. Please enter the correct password.' }
-      }
-    }
-
-    // 2. Authenticate with Firebase Auth
-    try {
-      const userCredential = await signInWithEmailAndPassword(auth, cleanEmail, password)
-      if (userCredential.user) {
-        saveRegisteredAccount(cleanEmail, password)
-        setUser(userCredential.user)
-        setUserEmail(cleanEmail)
-        try {
-          localStorage.setItem('thirakku_user_email', cleanEmail)
-        } catch (e) {}
-        resetFailedAttempts()
-        return { error: null }
-      }
-    } catch (fbErr: any) {
-      if (
-        fbErr.code === 'auth/wrong-password' ||
-        fbErr.code === 'auth/invalid-credential' ||
-        fbErr.code === 'auth/invalid-login-credentials'
-      ) {
-        recordFailedAttempt()
-        return { error: 'Incorrect password. Please enter the correct password.' }
-      }
-
-      if (fbErr.code === 'auth/user-not-found') {
-        recordFailedAttempt()
-        return { error: 'No account found with this email. Please click "Create Account" tab to register.' }
-      }
-
-      if (fbErr.code === 'auth/too-many-requests') {
-        return { error: 'Access temporarily disabled due to many failed attempts. Please try again later.' }
-      }
-    }
-
-    // 3. Supabase Auth Check
-    if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-      try {
-        const { data, error } = await supabase.auth.signInWithPassword({
-          email: cleanEmail,
-          password,
-        })
-
-        if (!error && data.user) {
-          saveRegisteredAccount(cleanEmail, password)
-          setUser(data.user)
-          setUserEmail(cleanEmail)
-          try {
-            localStorage.setItem('thirakku_user_email', cleanEmail)
-          } catch (e) {}
-          resetFailedAttempts()
-          return { error: null }
-        }
-      } catch (sbErr) {}
-    }
-
-    recordFailedAttempt()
-    return { error: 'No account found with this email. Please click "Create Account" tab to register.' }
-  }
-
-  // Email & Password Registration (Strict Account Provisioning)
   const signUpWithEmail = async (
     email: string,
     password: string,
-    fullName?: string
-  ): Promise<{ error: string | null }> => {
-    if (isLocked) {
-      return { error: `Security Lock Active: Please wait ${lockRemainingSeconds}s before creating an account.` }
-    }
+    fullName?: string,
+    nextPath = '/'
+  ): Promise<{ error: string | null; requiresEmailConfirmation?: boolean }> => {
+    if (!isSupabaseConfigured) return { error: configurationError() }
+    if (!email.trim() || !password) return { error: 'Enter your email and password.' }
+    if (password.length < 8) return { error: 'Use a password with at least 8 characters.' }
 
-    const cleanEmail = email.trim().toLowerCase()
-    if (!cleanEmail || !password) {
-      return { error: 'Please provide both email and password.' }
-    }
-
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-    if (!emailRegex.test(cleanEmail)) {
-      return { error: 'Please enter a valid Gmail / Email address.' }
-    }
-
-    if (password.length < 8) {
-      return { error: 'Password must be at least 8 characters long.' }
-    }
-
-    // Save account credentials in registry
-    saveRegisteredAccount(cleanEmail, password)
-
-    // Try Firebase Registration
     try {
-      const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, password)
-      if (userCredential.user) {
-        setUser(userCredential.user)
-        setUserEmail(cleanEmail)
-        try {
-          localStorage.setItem('thirakku_user_email', cleanEmail)
-        } catch (e) {}
-        resetFailedAttempts()
-        return { error: null }
-      }
-    } catch (fbErr: any) {
-      if (fbErr.code === 'auth/email-already-in-use') {
-        return { error: 'An account with this email already exists. Please switch to "Sign In" tab.' }
-      }
-    }
+      const { data, error } = await supabase.auth.signUp({
+        email: email.trim().toLowerCase(),
+        password,
+        options: {
+          emailRedirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(getSafeAuthDestination(nextPath))}`,
+          data: { full_name: fullName?.trim() || email.trim().split('@')[0] },
+        },
+      })
 
-    // Try Supabase Registration
-    if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+      if (error) return { error: error.message }
+      return { error: null, requiresEmailConfirmation: !data.session }
+    } catch {
+      return { error: 'Could not create your account. Check your connection and try again.' }
+    }
+  }
+
+  const requestPasswordReset = async (email: string): Promise<{ error: string | null }> => {
+    if (!isSupabaseConfigured) return { error: configurationError() }
+    if (!email.trim()) return { error: 'Enter your email address.' }
+
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
+        redirectTo: `${window.location.origin}/auth/callback?next=/auth/reset-password`,
+      })
+      return { error: error?.message ?? null }
+    } catch {
+      return { error: 'Could not send a reset link. Check your connection and try again.' }
+    }
+  }
+
+  const updatePassword = async (password: string): Promise<{ error: string | null }> => {
+    if (!isSupabaseConfigured) return { error: configurationError() }
+    if (password.length < 8) return { error: 'Use a password with at least 8 characters.' }
+
+    try {
+      const { error } = await supabase.auth.updateUser({ password })
+      return { error: error?.message ?? null }
+    } catch {
+      return { error: 'Could not update your password. Open a fresh reset link and try again.' }
+    }
+  }
+
+  const signOut = async (): Promise<{ error: string | null }> => {
+    if (isSupabaseConfigured) {
       try {
-        await supabase.auth.signUp({
-          email: cleanEmail,
-          password,
-          options: {
-            data: { full_name: fullName || cleanEmail.split('@')[0] },
-          },
-        })
-      } catch (sbErr) {}
+        const { error } = await supabase.auth.signOut()
+        if (error) return { error: error.message }
+      } catch {
+        return { error: 'Could not sign out. Try again.' }
+      }
     }
-
-    // Successfully registered and authenticated
-    setUser({ email: cleanEmail, id: 'user_' + cleanEmail.split('@')[0] })
-    setUserEmail(cleanEmail)
-    try {
-      localStorage.setItem('thirakku_user_email', cleanEmail)
-    } catch (e) {}
-    resetFailedAttempts()
-    return { error: null }
-  }
-
-  const signOut = async () => {
-    try {
-      await firebaseSignOut(auth)
-    } catch (e) {}
-    try {
-      await supabase.auth.signOut()
-    } catch (e) {}
-
-    setUser(null)
     setSession(null)
-    setUserEmail(null)
-    try {
-      localStorage.removeItem('thirakku_user_email')
-    } catch (e) {}
     return { error: null }
   }
+
+  const user = session?.user ?? null
 
   return (
     <AuthContext.Provider
       value={{
         user,
         session,
-        userEmail,
-        commuterId,
+        userEmail: user?.email ?? null,
         loading,
-        isLocked,
-        lockRemainingSeconds,
         signInWithGoogle,
-        signInWithSupabaseGoogle,
         signInWithEmail,
         signUpWithEmail,
+        requestPasswordReset,
+        updatePassword,
         signOut,
       }}
     >
@@ -460,8 +200,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
 export function useAuth() {
   const context = useContext(AuthContext)
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider')
-  }
+  if (!context) throw new Error('useAuth must be used within an AuthProvider')
   return context
 }

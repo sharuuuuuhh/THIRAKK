@@ -1,8 +1,17 @@
 import { NextResponse } from 'next/server'
+import { timingSafeEqual } from 'node:crypto'
 import { supabaseAdmin, isConfigured } from '@/lib/supabase-admin'
 import { INDIA_STATIONS, INDIA_TRAINS, INDIA_ROUTES } from '@/lib/data/india-railways-data'
 
-export async function POST() {
+export async function POST(request: Request) {
+  const expectedToken = process.env.SEED_ADMIN_TOKEN
+  const providedToken = request.headers.get('authorization')?.replace(/^Bearer\s+/i, '') ?? ''
+  const expected = Buffer.from(expectedToken ?? '')
+  const provided = Buffer.from(providedToken)
+  if (!expectedToken || expected.length !== provided.length || !timingSafeEqual(expected, provided)) {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  }
+
   if (!isConfigured) {
     return NextResponse.json(
       { error: 'Supabase admin keys not configured on server' },
@@ -56,9 +65,10 @@ export async function POST() {
         .filter((s): s is { route_id: number; station_id: number; stop_order: number } => s !== null)
 
       if (stops.length > 0) {
-        await supabaseAdmin.from('route_stops').upsert(stops, {
+        const { error } = await supabaseAdmin.from('route_stops').upsert(stops, {
           onConflict: 'route_id,station_id',
         })
+        if (error) throw new Error('Could not seed route stops.')
       }
     }
 
@@ -80,9 +90,10 @@ export async function POST() {
     }
 
     // Fetch train map (number -> id)
-    const { data: dbTrains } = await supabaseAdmin.from('trains').select('id, number')
+    const { data: dbTrains, error: fetchTrainsErr } = await supabaseAdmin.from('trains').select('id, number')
+    if (fetchTrainsErr || !dbTrains) throw new Error('Could not fetch trains after seeding.')
     const trainMap = new Map<string, number>()
-    dbTrains?.forEach((t) => trainMap.set(t.number, t.id))
+    dbTrains.forEach((t) => trainMap.set(t.number, t.id))
 
     // 4. Upsert Timetable entries
     const timetableRows: {
@@ -112,9 +123,10 @@ export async function POST() {
     }
 
     if (timetableRows.length > 0) {
-      await supabaseAdmin.from('timetable').upsert(timetableRows, {
+      const { error } = await supabaseAdmin.from('timetable').upsert(timetableRows, {
         onConflict: 'train_id,station_id',
       })
+      if (error) throw new Error('Could not seed timetable rows.')
     }
 
     return NextResponse.json({

@@ -1,3 +1,5 @@
+import 'server-only'
+
 /**
  * Supabase admin client — server-side ONLY.
  * Uses the service-role key. Never import this in client components.

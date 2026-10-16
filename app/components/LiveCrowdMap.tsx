@@ -1,6 +1,7 @@
 'use client'
 
-import React, { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import type { LayerGroup, Map } from 'leaflet'
 import type { Station, StretchCrowd } from '@/lib/types'
 import { CROWD_COLORS, NO_DATA_COLOR } from '@/lib/types'
 
@@ -9,8 +10,8 @@ interface LiveCrowdMapProps {
   stretches: StretchCrowd[]
   selectedStretch: StretchCrowd | null
   onSelectStretch: (stretch: StretchCrowd) => void
-  timeMode: 'now' | 'later' | 'tomorrow'
-  trainNumber?: string
+  mapLabel: string
+  emptyMessage: string
 }
 
 export default function LiveCrowdMap({
@@ -18,253 +19,126 @@ export default function LiveCrowdMap({
   stretches,
   selectedStretch,
   onSelectStretch,
-  timeMode,
-  trainNumber = '16308',
+  mapLabel,
+  emptyMessage,
 }: LiveCrowdMapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null)
-  const mapInstanceRef = useRef<any>(null)
-  const polylinesRef = useRef<{ [key: string]: any }>({})
-  const markersRef = useRef<any[]>([])
-  const trainMarkerRef = useRef<any>(null)
-
+  const mapInstanceRef = useRef<Map | null>(null)
+  const layersRef = useRef<LayerGroup | null>(null)
   const [mapLoaded, setMapLoaded] = useState(false)
-  const [liveLocation, setLiveLocation] = useState<{
-    lat: number
-    lng: number
-    speed_kmh: number
-    current_status: string
-    source: string
-  } | null>(null)
 
-  // Fetch live train location telemetry from RailRadar API
   useEffect(() => {
-    let isCancelled = false
-
-    async function fetchLiveTrack() {
-      try {
-        const res = await fetch(`/api/live-train-location?train=${trainNumber}`)
-        if (res.ok) {
-          const data = await res.json()
-          if (!isCancelled && data.lat && data.lng) {
-            setLiveLocation({
-              lat: data.lat,
-              lng: data.lng,
-              speed_kmh: data.speed_kmh || 68,
-              current_status: data.current_status || 'Live tracking active',
-              source: data.source || 'railradar',
-            })
-          }
-        }
-      } catch (err) {}
-    }
-
-    fetchLiveTrack()
-    const interval = setInterval(fetchLiveTrack, 15000)
-
-    return () => {
-      isCancelled = true
-      clearInterval(interval)
-    }
-  }, [trainNumber])
-
-  // Initialize Leaflet map with clean, ultra-reliable tiles
-  useEffect(() => {
-    let isMounted = true
+    let mounted = true
 
     async function initMap() {
       if (!mapContainerRef.current || mapInstanceRef.current) return
 
       const L = (await import('leaflet')).default
+      if (!mounted || !mapContainerRef.current) return
 
-      if (!isMounted || !mapContainerRef.current) return
-
-      const defaultCenter: [number, number] = [10.5, 76.2]
       const map = L.map(mapContainerRef.current, {
-        center: defaultCenter,
+        center: [10.5, 76.2],
         zoom: 8,
         zoomControl: true,
-        attributionControl: false,
       })
 
-      // Clean Map Tiles with API Key integration
-      const mapsKey = process.env.NEXT_PUBLIC_MAPS_API_KEY || 'cb1_44lq_1_be68afe8d1db80cba179a34d'
-      const tileUrl = `https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png?key=${mapsKey}`
-
-      L.tileLayer(tileUrl, {
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
-        subdomains: 'abcd',
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
       }).addTo(map)
 
       mapInstanceRef.current = map
+      layersRef.current = L.layerGroup().addTo(map)
       setMapLoaded(true)
-
-      // Ensure proper size calculation
-      setTimeout(() => {
-        if (mapInstanceRef.current) {
-          mapInstanceRef.current.invalidateSize()
-        }
-      }, 200)
+      window.setTimeout(() => map.invalidateSize(), 100)
     }
 
-    initMap()
+    void initMap()
 
     return () => {
-      isMounted = false
-      if (mapInstanceRef.current) {
-        mapInstanceRef.current.remove()
-        mapInstanceRef.current = null
-      }
+      mounted = false
+      mapInstanceRef.current?.remove()
+      mapInstanceRef.current = null
+      layersRef.current = null
     }
   }, [])
 
-  // Draw polylines, station markers, and live train position
   useEffect(() => {
-    if (!mapLoaded || !mapInstanceRef.current) return
+    let cancelled = false
 
-    async function updateMapLayers() {
-      const L = (await import('leaflet')).default
+    async function drawRoute() {
       const map = mapInstanceRef.current
+      const layers = layersRef.current
+      if (!mapLoaded || !map || !layers) return
 
-      // Invalidate size in case tab or parent container animated
-      map.invalidateSize()
+      const L = (await import('leaflet')).default
+      if (cancelled) return
 
-      // Clear previous layers
-      Object.values(polylinesRef.current).forEach((polyline: any) => {
-        if (polyline.backgroundLine) polyline.backgroundLine.remove()
-        if (polyline.mainLine) polyline.mainLine.remove()
-        if (polyline.hitArea) polyline.hitArea.remove()
-      })
-      polylinesRef.current = {}
-      markersRef.current.forEach((marker: any) => marker.remove())
-      markersRef.current = []
-
-      if (trainMarkerRef.current) {
-        trainMarkerRef.current.remove()
-        trainMarkerRef.current = null
-      }
-
+      layers.clearLayers()
       if (stations.length === 0) return
 
       const bounds = L.latLngBounds([])
 
-      // 1. Draw track stretches (Polylines)
       stretches.forEach((stretch) => {
-        const fromCoord: [number, number] = [stretch.from_station.lat, stretch.from_station.lng]
-        const toCoord: [number, number] = [stretch.to_station.lat, stretch.to_station.lng]
+        const start: [number, number] = [stretch.from_station.lat, stretch.from_station.lng]
+        const end: [number, number] = [stretch.to_station.lat, stretch.to_station.lng]
+        bounds.extend(start)
+        bounds.extend(end)
 
-        bounds.extend(fromCoord)
-        bounds.extend(toCoord)
-
-        const stretchKey = `${stretch.from_station.code}-${stretch.to_station.code}`
-        const isSelected =
-          selectedStretch?.from_station.code === stretch.from_station.code &&
+        const selected = selectedStretch?.from_station.code === stretch.from_station.code &&
           selectedStretch?.to_station.code === stretch.to_station.code
+        const color = stretch.level === null ? NO_DATA_COLOR : CROWD_COLORS[stretch.level]
 
-        const color = stretch.level ? CROWD_COLORS[stretch.level] : NO_DATA_COLOR
+        L.polyline([start, end], {
+          color: '#ffffff',
+          weight: selected ? 10 : 8,
+          opacity: 0.95,
+          lineCap: 'round',
+        }).addTo(layers)
 
-        // Outer white crisp casing
-        const backgroundLine = L.polyline([fromCoord, toCoord], {
-          color: isSelected ? '#1e3a8a' : '#ffffff',
-          weight: isSelected ? 9 : 6,
+        L.polyline([start, end], {
+          color,
+          weight: selected ? 6 : 4,
           opacity: 1,
-        }).addTo(map)
+          dashArray: stretch.level === null ? '5 7' : undefined,
+          lineCap: 'round',
+        }).addTo(layers)
 
-        // Main colored crowd level line
-        const mainLine = L.polyline([fromCoord, toCoord], {
-          color: color,
-          weight: isSelected ? 5 : 3.5,
-          opacity: 1,
-          dashArray: stretch.level ? undefined : '4, 4',
-        }).addTo(map)
-
-        // Interactive hit area
-        const hitArea = L.polyline([fromCoord, toCoord], {
+        L.polyline([start, end], {
           color: 'transparent',
           weight: 24,
           opacity: 0.01,
-          interactive: true,
-        }).addTo(map)
-
-        hitArea.on('click', () => {
-          onSelectStretch(stretch)
-        })
-
-        polylinesRef.current[stretchKey] = { backgroundLine, mainLine, hitArea }
+        }).on('click', () => onSelectStretch(stretch)).addTo(layers)
       })
 
-      // 2. Draw Station Markers
-      stations.forEach((st, idx) => {
-        const isTerminal = idx === 0 || idx === stations.length - 1
-        const coord: [number, number] = [st.lat, st.lng]
-        bounds.extend(coord)
+      stations.forEach((station, index) => {
+        const coordinate: [number, number] = [station.lat, station.lng]
+        bounds.extend(coordinate)
 
-        const iconHtml = `
-          <div style="display:flex; flex-direction:column; align-items:center; transform: translate(-50%, -50%);">
-            <div style="width: 10px; height: 10px; border-radius: 9999px; border: 2px solid white; background-color: ${
-              isTerminal ? '#1e3a8a' : '#334155'
-            }; box-shadow: 0 1px 3px rgba(0,0,0,0.3);"></div>
-            <div style="margin-top: 2px; white-space: nowrap; border-radius: 4px; border: 1px solid #cbd5e1; background: white; padding: 1px 4px; font-size: 9px; font-weight: 700; color: #1e293b; box-shadow: 0 1px 2px rgba(0,0,0,0.1);">
-              ${st.name.split(' ')[0]}
-            </div>
-          </div>
-        `
-
-        const customIcon = L.divIcon({
-          html: iconHtml,
-          className: 'custom-station-marker',
-          iconSize: [0, 0],
-          iconAnchor: [0, 0],
-        })
-
-        const marker = L.marker(coord, { icon: customIcon }).addTo(map)
-        markersRef.current.push(marker)
+        L.circleMarker(coordinate, {
+          radius: index === 0 || index === stations.length - 1 ? 6 : 4,
+          color: '#ffffff',
+          weight: 2,
+          fillColor: '#1e293b',
+          fillOpacity: 1,
+        }).bindTooltip(station.name, { direction: 'top', offset: [0, -6] }).addTo(layers)
       })
-
-      // 3. Draw Live Train Location Marker (RailRadar live telemetry)
-      if (liveLocation && liveLocation.lat && liveLocation.lng) {
-        const trainCoord: [number, number] = [liveLocation.lat, liveLocation.lng]
-        bounds.extend(trainCoord)
-
-        const trainHtml = `
-          <div style="display:flex; flex-direction:column; align-items:center; transform: translate(-50%, -50%);">
-            <div style="width: 24px; height: 24px; border-radius: 9999px; background: #2563eb; border: 2px solid white; display: flex; align-items: center; justify-content: center; font-size: 11px; box-shadow: 0 2px 5px rgba(0,0,0,0.3);">
-              🚆
-            </div>
-            <div style="margin-top: 2px; white-space: nowrap; border-radius: 4px; background: #0f172a; color: white; padding: 1px 5px; font-size: 9px; font-weight: 700;">
-              Live · ${liveLocation.speed_kmh} km/h
-            </div>
-          </div>
-        `
-
-        const trainIcon = L.divIcon({
-          html: trainHtml,
-          className: 'custom-train-marker',
-          iconSize: [0, 0],
-          iconAnchor: [0, 0],
-        })
-
-        const trainMarker = L.marker(trainCoord, { icon: trainIcon, zIndexOffset: 1000 }).addTo(map)
-        trainMarkerRef.current = trainMarker
-      }
 
       if (bounds.isValid()) {
-        map.fitBounds(bounds, {
-          padding: [30, 30],
-          maxZoom: 13,
-        })
+        map.fitBounds(bounds, { padding: [24, 24], maxZoom: 13 })
       }
     }
 
-    updateMapLayers()
-  }, [mapLoaded, stations, stretches, selectedStretch, onSelectStretch, liveLocation])
+    void drawRoute()
+    return () => { cancelled = true }
+  }, [mapLoaded, stations, stretches, selectedStretch, onSelectStretch])
 
   return (
-    <div className="relative h-[280px] w-full min-h-[280px] rounded-xl overflow-hidden border border-slate-200 bg-slate-100">
-      <div ref={mapContainerRef} className="h-full w-full" />
-      {liveLocation && (
-        <div className="absolute top-2 right-2 z-[400] flex items-center gap-1.5 rounded-lg border border-blue-200 bg-white/95 backdrop-blur-xs px-2.5 py-1 text-[10px] font-bold text-blue-900 shadow-xs">
-          <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-          <span>RailRadar GPS ({liveLocation.speed_kmh} km/h)</span>
+    <div className="relative h-[280px] w-full overflow-hidden rounded-lg border border-[var(--border)] bg-[#eef2f5] sm:h-[340px]">
+      <div ref={mapContainerRef} className="h-full w-full" role="img" aria-label={mapLabel} />
+      {stations.length === 0 && (
+        <div className="absolute inset-0 flex items-center justify-center bg-[var(--bg-card)] px-6 text-center text-sm text-[var(--text-secondary)]">
+          {emptyMessage}
         </div>
       )}
     </div>

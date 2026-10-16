@@ -8,10 +8,6 @@ import {
   Clock,
   ArrowRight,
   Sparkles,
-  CheckCircle2,
-  AlertCircle,
-  Database,
-  RefreshCw,
   Layers,
   ChevronRight,
 } from 'lucide-react'
@@ -25,10 +21,6 @@ export default function IndiaExplorePage() {
   // Route journey search
   const [fromCode, setFromCode] = useState<string>('TVC')
   const [toCode, setToCode] = useState<string>('NDLS')
-
-  // Seeding status
-  const [syncing, setSyncing] = useState(false)
-  const [syncResult, setSyncResult] = useState<{ success: boolean; message: string } | null>(null)
 
   // Unique zones and states for filters
   const zones = useMemo(() => {
@@ -67,27 +59,6 @@ export default function IndiaExplorePage() {
     })
   }, [fromCode, toCode])
 
-  const handleSyncDatabase = async () => {
-    setSyncing(true)
-    setSyncResult(null)
-    try {
-      const res = await fetch('/api/seed-india', { method: 'POST' })
-      const data = await res.json()
-      if (res.ok) {
-        setSyncResult({ success: true, message: data.message })
-      } else {
-        setSyncResult({ success: false, message: data.error || 'Failed to sync' })
-      }
-    } catch (err: unknown) {
-      setSyncResult({
-        success: false,
-        message: err instanceof Error ? err.message : 'Network error',
-      })
-    } finally {
-      setSyncing(false)
-    }
-  }
-
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
       {/* Top Banner */}
@@ -107,39 +78,10 @@ export default function IndiaExplorePage() {
           </p>
 
           <div className="mt-6 flex flex-wrap items-center gap-3">
-            <button
-              onClick={handleSyncDatabase}
-              disabled={syncing}
-              className="inline-flex items-center gap-2 rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-slate-950 shadow-md hover:bg-emerald-400 focus:outline-none disabled:opacity-50 transition-all cursor-pointer"
-            >
-              {syncing ? (
-                <RefreshCw className="h-4 w-4 animate-spin" />
-              ) : (
-                <Database className="h-4 w-4" />
-              )}
-              <span>{syncing ? 'Syncing to Supabase...' : 'Sync India Data to Supabase'}</span>
-            </button>
             <div className="text-xs text-emerald-200/70">
               Includes {INDIA_STATIONS.length} stations & {INDIA_ROUTES.length} key trunk routes
             </div>
           </div>
-
-          {syncResult && (
-            <div
-              className={`mt-4 inline-flex items-center gap-2 rounded-xl p-3 text-xs font-medium ${
-                syncResult.success
-                  ? 'bg-emerald-500/20 text-emerald-200 border border-emerald-500/40'
-                  : 'bg-rose-500/20 text-rose-200 border border-rose-500/40'
-              }`}
-            >
-              {syncResult.success ? (
-                <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-              ) : (
-                <AlertCircle className="h-4 w-4 text-rose-400" />
-              )}
-              <span>{syncResult.message}</span>
-            </div>
-          )}
         </div>
       </div>
 

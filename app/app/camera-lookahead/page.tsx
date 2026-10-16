@@ -52,7 +52,7 @@ export default function CameraLookaheadPage() {
       ctx.lineTo(640, 240)
       ctx.stroke()
 
-      boxes.forEach((b, idx) => {
+      boxes.forEach((b) => {
         b.x += b.vx
         if (b.x > 580 || b.x < 50) b.vx *= -1
 
@@ -85,7 +85,7 @@ export default function CameraLookaheadPage() {
   return (
     <div className="mx-auto max-w-4xl px-4 py-8 space-y-6 text-slate-900">
       <div className="border border-slate-300 bg-white p-4 rounded text-xs text-slate-800">
-        <strong>Platform Look-Ahead:</strong> Platform camera look-ahead uses density analysis on sample platform footage to predict crowding on the incoming train.
+        <strong>Prototype preview:</strong> This animated schematic does not use camera footage, run a model, or predict an incoming train&apos;s crowd level. All numbers are illustrative samples.
       </div>
 
       <div className="border border-slate-300 bg-white p-6 rounded">
@@ -102,7 +102,7 @@ export default function CameraLookaheadPage() {
         <div className="border border-slate-300 bg-white p-4 lg:col-span-7 space-y-3 rounded">
           <div className="flex items-center justify-between text-xs text-slate-700 border-b border-slate-200 pb-2">
             <span className="font-bold">Station CCTV Stream (Sample)</span>
-            <span className="font-semibold text-slate-500">Inference Active</span>
+            <span className="font-semibold text-slate-500">Demo animation</span>
           </div>
 
           <div className="relative aspect-video w-full overflow-hidden bg-black rounded">
@@ -110,7 +110,7 @@ export default function CameraLookaheadPage() {
           </div>
 
           <div className="flex items-center justify-between text-xs text-slate-600">
-            <span>Model: DensityNet-Edge</span>
+            <span>Illustrative counter values</span>
             <button
               onClick={() => setIsPlaying(!isPlaying)}
               className="font-semibold text-slate-900 underline"

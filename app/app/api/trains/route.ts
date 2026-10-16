@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { INDIA_TRAINS, INDIA_STATIONS } from '@/lib/data/india-railways-data'
+import { INDIA_TRAINS } from '@/lib/data/india-railways-data'
 import { getStationByCode, getRouteStations, computeRouteStretches } from '@/lib/crowd-service'
 
 export const dynamic = 'force-dynamic'

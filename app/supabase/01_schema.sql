@@ -158,6 +158,14 @@ alter table reports        enable row level security;
 alter table volunteer_logs enable row level security;
 alter table trust_scores   enable row level security;
 alter table signatures     enable row level security;
+alter table stations       enable row level security;
+alter table trains         enable row level security;
+alter table route_stops    enable row level security;
+alter table timetable      enable row level security;
+alter table forecasts      enable row level security;
+alter table forecast_checks enable row level security;
+alter table special_days   enable row level security;
+alter table petitions      enable row level security;
 
 -- Public read for non-sensitive tables
 create policy "Public stations read"   on stations   for select using (true);
@@ -175,18 +183,10 @@ create policy "No anon read on reports"
   on reports for select
   using (false);
 
-create policy "Insert reports (anon)"
-  on reports for insert
-  with check (true);
-
--- Volunteer logs: insert allowed, read restricted
+-- Volunteer logs are available to trusted server code only
 create policy "No anon read on volunteer_logs"
   on volunteer_logs for select
   using (false);
-
-create policy "Insert volunteer_logs"
-  on volunteer_logs for insert
-  with check (true);
 
 -- Trust scores: server-side only
 create policy "No anon trust read"
@@ -197,7 +197,3 @@ create policy "No anon trust read"
 create policy "No anon signature read"
   on signatures for select
   using (false);
-
-create policy "Insert signature (anon)"
-  on signatures for insert
-  with check (true);

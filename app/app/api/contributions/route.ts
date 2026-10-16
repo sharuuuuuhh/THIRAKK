@@ -1,247 +1,91 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabaseAdmin, isConfigured } from '@/lib/supabase-admin'
+import { supabaseAdmin } from '@/lib/supabase-admin'
+import { getAuthenticatedReporter } from '@/lib/server-auth'
+import { getIndiaDateKey, shiftDateKey } from '@/lib/india-date'
 
 export const dynamic = 'force-dynamic'
 
-interface ContributionRecord {
+interface DbReport {
   id: string
-  userEmail?: string
-  deviceHash: string
-  trainNumber: string
-  stationCode: string
   level: number
-  photoMatch: string
-  points: number
-  timestamp: number
-  travelDate: string
+  created_at: string
+  travel_date: string
+  train_id: number
+  station_id: number
 }
 
-// In-memory persistent cache for realtime fallback
-let globalContributions: ContributionRecord[] = [
-  {
-    id: 'rep_seed_1',
-    userEmail: 'passenger.kerala@rail.in',
-    deviceHash: 'dev_kl_01',
-    trainNumber: '16308',
-    stationCode: 'CAN',
-    level: 2,
-    photoMatch: 'agree',
-    points: 15,
-    timestamp: Date.now() - 1000 * 60 * 45,
-    travelDate: new Date().toISOString().split('T')[0],
-  },
-  {
-    id: 'rep_seed_2',
-    userEmail: 'rahul.commuter@gmail.com',
-    deviceHash: 'dev_kl_02',
-    trainNumber: '16604',
-    stationCode: 'CLT',
-    level: 3,
-    photoMatch: 'agree',
-    points: 15,
-    timestamp: Date.now() - 1000 * 60 * 180,
-    travelDate: new Date().toISOString().split('T')[0],
-  },
-  {
-    id: 'rep_seed_3',
-    userEmail: 'kavitha.v@gmail.com',
-    deviceHash: 'dev_kl_03',
-    trainNumber: '12075',
-    stationCode: 'ERS',
-    level: 1,
-    photoMatch: 'agree',
-    points: 15,
-    timestamp: Date.now() - 1000 * 60 * 360,
-    travelDate: new Date().toISOString().split('T')[0],
-  }
-]
-
 export async function GET(req: NextRequest) {
+  const auth = await getAuthenticatedReporter(req)
+  if (auth.error === 'server_not_configured') {
+    return NextResponse.json({ error: 'Contribution history is temporarily unavailable.' }, { status: 503 })
+  }
+  if (!auth.user || !auth.deviceHash) {
+    return NextResponse.json({ error: 'Sign in to view your contribution history.' }, { status: 401 })
+  }
+
   try {
-    const { searchParams } = new URL(req.url)
-    const email = searchParams.get('email')?.toLowerCase()
-    const deviceHash = searchParams.get('deviceHash') || 'dev-anon'
+    const { data: rawReports, error } = await supabaseAdmin.from('reports')
+      .select('id, level, created_at, travel_date, train_id, station_id')
+      .eq('device_hash', auth.deviceHash)
+      .eq('is_sample', false)
+      .eq('location_ok', true)
+      .order('created_at', { ascending: false })
+      .limit(500)
+    if (error) throw new Error('Could not load contribution history.')
 
-    let userReports: ContributionRecord[] = []
+    const reports = (rawReports ?? []) as DbReport[]
+    const [{ data: trains }, { data: stations }] = await Promise.all([
+      supabaseAdmin.from('trains').select('id, number'),
+      supabaseAdmin.from('stations').select('id, code'),
+    ])
+    const trainNumbers = new Map((trains ?? []).map((train) => [train.id, train.number]))
+    const stationCodes = new Map((stations ?? []).map((station) => [station.id, station.code]))
+    const recentReports = reports.map((report) => ({
+      id: report.id,
+      trainNumber: trainNumbers.get(report.train_id) ?? 'Unknown',
+      stationCode: stationCodes.get(report.station_id) ?? 'Unknown',
+      level: report.level,
+      timestamp: new Date(report.created_at).getTime(),
+      travelDate: report.travel_date,
+    }))
 
-    // Fetch from Supabase if configured
-    if (isConfigured) {
-      try {
-        const { data: dbReports } = await supabaseAdmin
-          .from('reports')
-          .select('id, level, photo_match, created_at, travel_date, device_hash, weight')
-          .order('created_at', { ascending: false })
-          .limit(50)
-
-        if (dbReports && dbReports.length > 0) {
-          const mappedDb: ContributionRecord[] = dbReports.map((r: any) => ({
-            id: r.id,
-            userEmail: email || undefined,
-            deviceHash: r.device_hash || deviceHash,
-            trainNumber: '16308',
-            stationCode: 'CAN',
-            level: r.level,
-            photoMatch: r.photo_match || 'agree',
-            points: Math.round((Number(r.weight) || 1) * 10),
-            timestamp: new Date(r.created_at).getTime(),
-            travelDate: r.travel_date || new Date().toISOString().split('T')[0],
-          }))
-
-          // Merge without duplicates
-          const seen = new Set(globalContributions.map((c) => c.id))
-          mappedDb.forEach((m) => {
-            if (!seen.has(m.id)) {
-              globalContributions.unshift(m)
-              seen.add(m.id)
-            }
-          })
-        }
-      } catch (err) {
-        console.warn('Supabase contributions query fallback:', err)
-      }
-    }
-
-    // Filter for current user or device
-    userReports = globalContributions.filter(
-      (c) => (email && c.userEmail === email) || c.deviceHash === deviceHash
-    )
-
-    const totalReports = userReports.length
-    const totalPoints = userReports.reduce((sum, r) => sum + (r.points || 15), 0)
-
-    // Build 10-week activity heatmap (10 weeks x 7 days)
-    const now = new Date()
+    const today = getIndiaDateKey()
     const heatmap: { date: string; count: number; level: number }[][] = []
-
-    for (let w = 9; w >= 0; w--) {
-      const weekDays: { date: string; count: number; level: number }[] = []
-      for (let d = 6; d >= 0; d--) {
-        const dayDate = new Date()
-        dayDate.setDate(now.getDate() - (w * 7 + d))
-        const dateStr = dayDate.toISOString().split('T')[0]
-
-        const dayReports = userReports.filter((r) => r.travelDate === dateStr)
-        const count = dayReports.length
-        const maxLevel = count > 0 ? Math.min(4, Math.max(...dayReports.map((r) => r.level))) : 0
-
-        weekDays.push({
-          date: dateStr,
-          count,
-          level: maxLevel,
+    for (let week = 9; week >= 0; week--) {
+      const days: { date: string; count: number; level: number }[] = []
+      for (let day = 6; day >= 0; day--) {
+        const dateString = shiftDateKey(today, -(week * 7 + day))
+        const reportsForDay = reports.filter((report) => report.travel_date === dateString)
+        days.push({
+          date: dateString,
+          count: reportsForDay.length,
+          level: reportsForDay.length ? Math.max(...reportsForDay.map((report) => report.level)) : 0,
         })
       }
-      heatmap.push(weekDays)
+      heatmap.push(days)
     }
 
-    // Generate dynamic Kerala commuter leaderboard
-    const baseLeaderboard = [
-      { rank: 1, name: 'Arjun N. (Kozhikode)', reports: 42, points: 580, badge: 'Top Commuter' },
-      { rank: 2, name: 'Sneha P. (Thrissur)', reports: 38, points: 510, badge: 'Verified Scout' },
-      { rank: 3, name: 'Vishnu K. (Ernakulam)', reports: 29, points: 395, badge: 'Aisle Marshal' },
-      { rank: 4, name: 'Ananya R. (Kannur)', reports: 24, points: 330, badge: 'Station Guide' },
-      { rank: 5, name: 'Midhun T. (Trivandrum)', reports: 19, points: 260, badge: 'Camera Guard' },
-    ]
-
-    // Insert user into leaderboard
-    const userRankItem = {
-      rank: totalReports > 42 ? 1 : totalReports > 29 ? 3 : totalReports > 0 ? 6 : 7,
-      name: email ? email.split('@')[0] : 'You',
-      reports: totalReports,
-      points: totalPoints,
-      badge: totalReports >= 10 ? 'Verified Scout' : totalReports > 0 ? 'Active Reporter' : 'Commuter',
-      isCurrentUser: true,
+    const totalReports = reports.length
+    const activityDates = new Set(reports.map((report) => report.travel_date))
+    let expectedDate = activityDates.has(today)
+      ? today
+      : shiftDateKey(today, -1)
+    let streakDays = 0
+    while (activityDates.has(expectedDate)) {
+      streakDays += 1
+      expectedDate = shiftDateKey(expectedDate, -1)
     }
-
-    const leaderboard = [...baseLeaderboard]
-    if (totalReports > 0) {
-      leaderboard.push(userRankItem)
-      leaderboard.sort((a, b) => b.points - a.points)
-      leaderboard.forEach((item, idx) => {
-        item.rank = idx + 1
-      })
-    }
-
     return NextResponse.json({
       success: true,
       userStats: {
         totalReports,
-        totalPoints,
-        streakDays: totalReports > 0 ? Math.min(totalReports, 7) : 0,
-        rank: userRankItem.rank,
-        badge: userRankItem.badge,
+        streakDays,
+        badge: totalReports >= 10 ? 'Frequent reporter' : totalReports ? 'Active reporter' : 'New commuter',
       },
       heatmap,
-      recentReports: userReports.slice(0, 10),
-      leaderboard: leaderboard.slice(0, 10),
+      recentReports: recentReports.slice(0, 50),
     })
-  } catch (err: unknown) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Failed to retrieve contributions' },
-      { status: 500 }
-    )
-  }
-}
-
-export async function POST(req: NextRequest) {
-  try {
-    const body = await req.json()
-    const {
-      userEmail,
-      deviceHash = 'dev-anon',
-      trainNumber = '16308',
-      stationCode = 'CAN',
-      level = 1,
-      photoMatch = 'agree',
-      isVolunteer = false,
-    } = body
-
-    const travelDate = new Date().toISOString().split('T')[0]
-    const points = photoMatch === 'agree' ? 15 : 10
-
-    const newRecord: ContributionRecord = {
-      id: `rep_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-      userEmail: userEmail ? userEmail.toLowerCase() : undefined,
-      deviceHash,
-      trainNumber,
-      stationCode,
-      level: Number(level),
-      photoMatch,
-      points: isVolunteer ? points + 10 : points,
-      timestamp: Date.now(),
-      travelDate,
-    }
-
-    // Save in global memory
-    globalContributions.unshift(newRecord)
-
-    // Save to Supabase if configured
-    if (isConfigured) {
-      try {
-        await supabaseAdmin.from('reports').insert({
-          train_id: 1,
-          station_id: 1,
-          level: newRecord.level,
-          photo_match: photoMatch,
-          location_ok: true,
-          device_hash: deviceHash,
-          travel_date: travelDate,
-          weight: isVolunteer ? 3.0 : 2.0,
-          is_sample: false,
-        })
-      } catch (dbErr) {
-        console.warn('Supabase contribution insertion fallback:', dbErr)
-      }
-    }
-
-    return NextResponse.json({
-      success: true,
-      message: 'Contribution recorded and points awarded!',
-      record: newRecord,
-    })
-  } catch (err: unknown) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Failed to record contribution' },
-      { status: 500 }
-    )
+  } catch {
+    return NextResponse.json({ error: 'Could not load contribution history.' }, { status: 500 })
   }
 }

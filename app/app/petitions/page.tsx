@@ -1,7 +1,8 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { useAuth } from '@/lib/auth-context'
 import {
   BarChart,
   Bar,
@@ -13,7 +14,7 @@ import {
   Pie,
   Cell,
 } from 'recharts'
-import { FileText, Share2, Check, ArrowLeft, Users, AlertTriangle, TrendingUp, ShieldCheck } from 'lucide-react'
+import { FileText, Share2, Check, ArrowLeft, Users } from 'lucide-react'
 
 const HOURLY_DATA = [
   { hour: '06:00', packed: 20 },
@@ -56,24 +57,55 @@ const WORST_CORRIDORS = [
 ]
 
 export default function ImpactAndPetitionPage() {
+  const { session } = useAuth()
   const [signed, setSigned] = useState(false)
-  const [signatureCount, setSignatureCount] = useState(1284)
-  const [name, setName] = useState('')
-  const [email, setEmail] = useState('')
+  const [signatureCount, setSignatureCount] = useState<number | null>(null)
+  const [petitionAvailable, setPetitionAvailable] = useState(false)
+  const [signing, setSigning] = useState(false)
+  const [signError, setSignError] = useState('')
+  const [signatureMessage, setSignatureMessage] = useState('')
   const [copied, setCopied] = useState(false)
 
-  const handleSign = (e: React.FormEvent) => {
+  useEffect(() => {
+    fetch('/api/impact')
+      .then(async (response) => {
+        const data = await response.json()
+        if (response.ok && data.success) {
+          setSignatureCount(data.totalSignatures)
+          setPetitionAvailable(data.available)
+        }
+      })
+      .catch(() => setSignError('Petition data is currently unavailable.'))
+  }, [])
+
+  const handleSign = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!signed) {
+    if (!session?.access_token || signing) return
+    setSigning(true)
+    setSignError('')
+    try {
+      const response = await fetch('/api/impact', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Could not save your signature.')
+      setSignatureCount(data.totalSignatures)
       setSigned(true)
-      setSignatureCount((c) => c + 1)
+      setSignatureMessage(data.alreadySigned
+        ? 'Your account already has a signature on this demo petition.'
+        : 'Your signature has been saved to the Thirakku demo petition.')
+    } catch (error) {
+      setSignError(error instanceof Error ? error.message : 'Could not save your signature.')
+    } finally {
+      setSigning(false)
     }
   }
 
   const handleShare = () => {
     if (navigator.clipboard) {
       navigator.clipboard.writeText(
-        `Thirakku Impact Evidence: 64% of Kerala general train coaches are packed beyond safe capacity. Join our petition to the DRM: ${window.location.href}`
+        `Explore Thirakku's sample crowd map and passenger petition: ${window.location.href}`
       )
       setCopied(true)
       setTimeout(() => setCopied(false), 3000)
@@ -99,6 +131,9 @@ export default function ImpactAndPetitionPage() {
 
         {/* Hero Impact Stats */}
         <div className="transit-card p-5 sm:p-6 space-y-4">
+          <p className="rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+            Sample dashboard figures below are illustrative, not live or independently verified evidence.
+          </p>
           <div className="flex items-start justify-between gap-4">
             <div>
               <div className="flex items-center gap-2 text-amber-400">
@@ -108,7 +143,7 @@ export default function ImpactAndPetitionPage() {
                 </h1>
               </div>
               <p className="text-xs text-slate-400 mt-1 max-w-xl">
-                Anecdotes can be dismissed. Verified passenger photo reports and verifiable capacity data cannot be ignored.
+                Review passenger reports and add your signature to the sample petition.
               </p>
             </div>
 
@@ -134,24 +169,24 @@ export default function ImpactAndPetitionPage() {
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3 border-t border-slate-800 text-xs">
             <div className="rounded-lg bg-slate-900/60 p-3 border border-slate-800">
-              <span className="text-slate-400 block text-[11px]">Weekly crush rate</span>
+              <span className="text-slate-400 block text-[11px]">Sample packed rate</span>
               <span className="text-xl font-bold text-red-400 mt-0.5 block">64%</span>
-              <span className="text-[10px] text-slate-500">Above coach capacity</span>
+              <span className="text-[10px] text-slate-500">Illustrative figure</span>
             </div>
             <div className="rounded-lg bg-slate-900/60 p-3 border border-slate-800">
               <span className="text-slate-400 block text-[11px]">Peak rush window</span>
               <span className="text-xl font-bold text-white mt-0.5 block">07:30 - 09:30</span>
-              <span className="text-[10px] text-slate-500">Morning commuter surge</span>
+              <span className="text-[10px] text-slate-500">Illustrative time window</span>
             </div>
             <div className="rounded-lg bg-slate-900/60 p-3 border border-slate-800">
-              <span className="text-slate-400 block text-[11px]">Photo-verified reports</span>
+              <span className="text-slate-400 block text-[11px]">Sample reports</span>
               <span className="text-xl font-bold text-blue-400 mt-0.5 block">344</span>
-              <span className="text-[10px] text-slate-500">On-device face blur</span>
+              <span className="text-[10px] text-slate-500">Not photo-verified</span>
             </div>
             <div className="rounded-lg bg-slate-900/60 p-3 border border-slate-800">
               <span className="text-slate-400 block text-[11px]">Forecast accuracy</span>
               <span className="text-xl font-bold text-emerald-400 mt-0.5 block">89.2%</span>
-              <span className="text-[10px] text-slate-500">Historical validation</span>
+              <span className="text-[10px] text-slate-500">Illustrative figure</span>
             </div>
           </div>
         </div>
@@ -248,7 +283,7 @@ export default function ImpactAndPetitionPage() {
         <div className="transit-card p-5 sm:p-6 space-y-4 border-amber-500/20">
           <div className="border-b border-slate-800 pb-3">
             <span className="text-[10px] font-semibold text-amber-400 uppercase tracking-wider block">
-              Official DRM Petition
+              Sample petition template · not an official submission
             </span>
             <h2 className="text-base sm:text-lg font-bold text-white mt-0.5">
               Demand Additional Unreserved Coaches on Kerala Trains
@@ -262,13 +297,10 @@ export default function ImpactAndPetitionPage() {
             <div className="font-bold text-white">TO: Divisional Railway Manager, Southern Railway</div>
             <div className="text-slate-400">Subject: Urgent demand for 2-4 unreserved coaches on peak commuter corridors</div>
             <p>
-              Passenger density monitoring on the Thirakku platform documents that 64% of general coach departures along the Malabar and Central Kerala corridors operate at severe crush or impossible-to-board density.
+              This is sample petition language for the demo. Replace the illustrative crowd figures with a verified report before submitting it to railway officials.
             </p>
             <p className="text-slate-400">
-              Attached Evidence Basis:
-              <br />· 344 photo-density verified reports with on-device biometric privacy
-              <br />· Corridors CAN-CLT and TCR-ERS systematically over safe limits
-              <br />· Peak morning crush: 07:30 - 09:30 AM
+              Attached Evidence Basis: sample telemetry only; no verified photo analysis or official capacity data is attached.
             </p>
             <p className="text-white">
               We respectfully petition Southern Railway to attach a minimum of two additional unreserved coaches to trains 16308, 16306, and regional MEMUs.
@@ -279,53 +311,27 @@ export default function ImpactAndPetitionPage() {
             <div className="flex items-center justify-between text-xs font-semibold text-white">
               <span className="flex items-center gap-1.5">
                 <Users className="h-4 w-4 text-blue-400" />
-                <span>{signatureCount.toLocaleString()} passengers signed</span>
+                <span>{signatureCount === null ? 'Loading signatures…' : `${signatureCount.toLocaleString()} passengers signed`}</span>
               </span>
-              <span className="text-slate-400 font-normal">Next milestone: 2,500</span>
+              <span className="text-slate-400 font-normal">One signature per account</span>
             </div>
 
             {signed ? (
               <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/20 p-3.5 text-center text-xs font-semibold text-emerald-400 flex items-center justify-center gap-2">
                 <Check className="h-4 w-4" />
-                <span>Your signature is verified and appended to the official dispatch dossier.</span>
+                <span>{signatureMessage}</span>
               </div>
             ) : (
               <form onSubmit={handleSign} className="space-y-3">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-400 mb-1">
-                      Full Name
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="Your name"
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      className="transit-input text-xs"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-400 mb-1">
-                      Email Address
-                    </label>
-                    <input
-                      type="email"
-                      required
-                      placeholder="Email for signature verification"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      className="transit-input text-xs"
-                    />
-                  </div>
-                </div>
-
+                {!session && <Link href="/auth/login" className="block text-center text-xs text-blue-300 underline">Sign in to add one signature per account</Link>}
+                {signError && <p role="status" className="text-center text-xs text-amber-300">{signError}</p>}
                 <button
                   type="submit"
+                  disabled={!session || !petitionAvailable || signing || signed}
                   className="btn-primary w-full"
                 >
                   <FileText className="h-4 w-4" />
-                  <span>Sign and send petition</span>
+                  <span>{signing ? 'Saving signature…' : 'Sign sample petition'}</span>
                 </button>
               </form>
             )}

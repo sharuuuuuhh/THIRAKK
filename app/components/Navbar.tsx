@@ -1,216 +1,99 @@
 'use client'
 
-import React, { useState } from 'react'
+import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { ArrowRight, Menu, TrainFront, X } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
-import { Train, Menu, X, LogIn, LogOut, Map, Compass, Trophy, FileText, UserCheck } from 'lucide-react'
+import { useLanguage } from '@/lib/language-context'
 
 export default function Navbar() {
   const pathname = usePathname()
-  const { user, userEmail, signOut, loading } = useAuth()
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-  const [language, setLanguage] = useState<'EN' | 'ML'>('EN')
+  const { user, signOut, loading } = useAuth()
+  const { lang, setLang, t } = useLanguage()
+  const [menuOpen, setMenuOpen] = useState(false)
 
-  const navLinks = [
-    { href: '/', label: 'Live map', icon: Map },
-    { href: '/better-option', label: 'Better train', icon: Compass },
-    { href: '/petitions', label: 'Petitions', icon: FileText },
-    { href: '/contributions', label: 'Leaderboard', icon: Trophy },
-    { href: '/volunteer', label: 'Volunteer', icon: UserCheck },
+  const links = [
+    { href: '/', label: t('liveMap') },
+    { href: '/better-option', label: t('betterOption') },
+    { href: '/petitions', label: t('impact') },
   ]
 
-  const handleSignOut = async () => {
-    await signOut()
-    setMobileMenuOpen(false)
-  }
-
-  const activeIdentity = user?.email || userEmail
+  const closeMenu = () => setMenuOpen(false)
+  const toggleLanguage = () => setLang(lang === 'en' ? 'ml' : 'en')
 
   return (
-    <header
-      className="sticky top-0 z-50 backdrop-blur-md"
-      style={{
-        backgroundColor: 'rgba(8, 11, 17, 0.88)',
-        borderBottom: '1px solid var(--border)',
-      }}
-    >
-      <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
-        {/* Brand */}
-        <div className="flex items-center gap-7">
-          <Link href="/" className="flex items-center gap-2.5 group">
-            <div
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-white transition-all"
-              style={{ backgroundColor: 'var(--primary)' }}
+    <header className="sticky top-0 z-50 border-b border-[var(--border)] bg-[var(--bg-app)]/95 backdrop-blur">
+      <div className="mx-auto flex min-h-16 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
+        <Link href="/" className="inline-flex min-h-11 items-center gap-2.5 rounded-sm text-[var(--text-primary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--primary)]" onClick={closeMenu}>
+          <TrainFront className="h-5 w-5 text-[var(--primary)]" aria-hidden="true" />
+          <span className="text-sm font-semibold tracking-tight">{t('appName')}</span>
+        </Link>
+
+        <nav className="hidden items-center gap-1 md:flex" aria-label={t('appName')}>
+          {links.map((link) => (
+            <Link
+              key={link.href}
+              href={link.href}
+              aria-current={pathname === link.href ? 'page' : undefined}
+              className={`inline-flex min-h-11 items-center rounded-md px-3 text-xs font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--primary)] ${pathname === link.href ? 'bg-[var(--bg-surface)] text-[var(--text-primary)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
             >
-              <Train className="h-4 w-4" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-bold tracking-tight text-white leading-none">
-                  Thirakku
-                </span>
-                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded text-emerald-400 bg-emerald-500/10 border border-emerald-500/20">
-                  Live
-                </span>
-              </div>
-              <span className="text-[11px] font-normal text-slate-400 block leading-tight mt-0.5">
-                Kerala Train Crowd Map
-              </span>
-            </div>
-          </Link>
+              {link.label}
+            </Link>
+          ))}
+        </nav>
 
-          {/* Desktop Nav */}
-          <nav className="hidden md:flex items-center gap-1">
-            {navLinks.map((link) => {
-              const Icon = link.icon
-              const isActive = pathname === link.href
-              return (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors"
-                  style={{
-                    color: isActive ? '#ffffff' : 'var(--text-secondary)',
-                    backgroundColor: isActive ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
-                  }}
-                >
-                  <Icon className="h-3.5 w-3.5 opacity-80" />
-                  <span>{link.label}</span>
-                </Link>
-              )
-            })}
-          </nav>
+        <div className="hidden items-center gap-2 md:flex">
+          <button type="button" onClick={toggleLanguage} className="inline-flex min-h-11 items-center rounded-md px-3 text-xs font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--primary)]" aria-label={t('language')}>
+            {t('language')}
+          </button>
+          {loading ? (
+          <span className="h-9 w-16 animate-pulse rounded bg-[var(--bg-surface)]" aria-label={t('loadingAccount')} />
+          ) : user ? (
+            <button type="button" onClick={() => { void signOut() }} className="inline-flex min-h-11 items-center rounded-md border border-[var(--border)] px-3 text-xs font-medium text-[var(--text-primary)] hover:bg-[var(--bg-surface)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--primary)]">
+              {t('signOut')}
+            </button>
+          ) : (
+            <Link href="/auth/login" className="inline-flex min-h-11 items-center gap-2 rounded-md bg-[var(--primary)] px-3 text-xs font-semibold text-white hover:bg-[var(--primary-hover)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--primary)]">
+              {t('signIn')} <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+            </Link>
+          )}
         </div>
 
-        {/* Right Controls */}
-        <div className="flex items-center gap-2.5">
-          {/* Language Toggle */}
-          <button
-            type="button"
-            onClick={() => setLanguage(l => l === 'EN' ? 'ML' : 'EN')}
-            className="hidden sm:inline-flex items-center justify-center rounded-md px-2.5 py-1 text-xs font-semibold text-slate-300 hover:text-white transition-colors"
-            style={{
-              backgroundColor: 'rgba(255, 255, 255, 0.05)',
-              border: '1px solid var(--border)',
-              minHeight: '32px',
-            }}
-            title="Toggle Language (English / Malayalam)"
-          >
-            {language === 'EN' ? 'മലയാളം' : 'English'}
-          </button>
-
-          {/* Desktop Auth */}
-          <div className="hidden sm:flex items-center gap-2">
-            {loading ? (
-              <div className="h-8 w-20 rounded bg-slate-800 animate-pulse" />
-            ) : activeIdentity ? (
-              <div className="flex items-center gap-2">
-                <span
-                  className="truncate max-w-[130px] px-2.5 py-1 rounded text-xs text-slate-300"
-                  style={{ backgroundColor: 'rgba(255, 255, 255, 0.05)', border: '1px solid var(--border)' }}
-                >
-                  {activeIdentity.split('@')[0]}
-                </span>
-                <button
-                  type="button"
-                  onClick={handleSignOut}
-                  className="inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs text-slate-400 hover:text-red-400 transition-colors"
-                  style={{ minHeight: '32px' }}
-                >
-                  <LogOut className="h-3.5 w-3.5" />
-                  <span>Exit</span>
-                </button>
-              </div>
-            ) : (
-              <Link
-                href="/auth/login"
-                className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium text-slate-200 hover:text-white transition-colors"
-                style={{
-                  backgroundColor: 'rgba(255, 255, 255, 0.06)',
-                  border: '1px solid var(--border)',
-                  minHeight: '32px',
-                }}
-              >
-                <LogIn className="h-3.5 w-3.5" />
-                <span>Sign in</span>
-              </Link>
-            )}
-          </div>
-
-          {/* Mobile menu button */}
-          <button
-            type="button"
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="md:hidden inline-flex items-center justify-center rounded-md p-2 text-slate-300 hover:text-white"
-            style={{
-              backgroundColor: 'rgba(255, 255, 255, 0.05)',
-              border: '1px solid var(--border)',
-              minHeight: '36px',
-            }}
-            aria-label="Toggle navigation menu"
-          >
-            {mobileMenuOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={() => setMenuOpen((open) => !open)}
+          className="inline-flex h-11 w-11 items-center justify-center rounded-md border border-[var(--border)] text-[var(--text-primary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--primary)] md:hidden"
+          aria-label={menuOpen ? t('closeNavigation') : t('openNavigation')}
+          aria-expanded={menuOpen}
+          aria-controls="mobile-navigation"
+        >
+          {menuOpen ? <X className="h-4 w-4" aria-hidden="true" /> : <Menu className="h-4 w-4" aria-hidden="true" />}
+        </button>
       </div>
 
-      {/* Mobile Drawer */}
-      {mobileMenuOpen && (
-        <div
-          className="md:hidden px-4 py-3 space-y-1.5"
-          style={{
-            backgroundColor: 'var(--bg-surface)',
-            borderTop: '1px solid var(--border)',
-          }}
-        >
-          {navLinks.map((link) => {
-            const Icon = link.icon
-            const isActive = pathname === link.href
-            return (
-              <Link
-                key={link.href}
-                href={link.href}
-                onClick={() => setMobileMenuOpen(false)}
-                className="flex items-center gap-2.5 rounded-md px-3 py-2.5 text-xs font-medium transition-colors"
-                style={{
-                  color: isActive ? '#ffffff' : 'var(--text-secondary)',
-                  backgroundColor: isActive ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
-                }}
-              >
-                <Icon className="h-4 w-4 opacity-70" />
-                <span>{link.label}</span>
-              </Link>
-            )
-          })}
-
-          <div className="pt-2 flex items-center justify-between border-t border-slate-800 text-xs">
-            <button
-              type="button"
-              onClick={() => setLanguage(l => l === 'EN' ? 'ML' : 'EN')}
-              className="text-slate-400 py-1"
+      {menuOpen && (
+        <nav id="mobile-navigation" className="space-y-1 border-t border-[var(--border)] px-4 py-3 md:hidden" aria-label={t('appName')}>
+          {links.map((link) => (
+            <Link
+              key={link.href}
+              href={link.href}
+              onClick={closeMenu}
+              aria-current={pathname === link.href ? 'page' : undefined}
+              className="flex min-h-11 items-center rounded-md px-3 text-sm text-[var(--text-primary)] hover:bg-[var(--bg-surface)]"
             >
-              Language: <strong className="text-white">{language === 'EN' ? 'English' : 'മലയാളം'}</strong>
-            </button>
-            {activeIdentity ? (
-              <button
-                type="button"
-                onClick={handleSignOut}
-                className="text-red-400 py-1"
-              >
-                Sign out
-              </button>
+              {link.label}
+            </Link>
+          ))}
+          <div className="flex items-center justify-between border-t border-[var(--border)] pt-2">
+            <button type="button" onClick={toggleLanguage} className="min-h-11 px-3 text-xs text-[var(--text-secondary)]">{t('language')}</button>
+            {!loading && (user ? (
+              <button type="button" onClick={() => { void signOut(); closeMenu() }} className="min-h-11 px-3 text-xs font-medium text-[var(--text-primary)]">{t('signOut')}</button>
             ) : (
-              <Link
-                href="/auth/login"
-                onClick={() => setMobileMenuOpen(false)}
-                className="text-blue-400 py-1"
-              >
-                Sign in
-              </Link>
-            )}
+              <Link href="/auth/login" onClick={closeMenu} className="min-h-11 px-3 pt-3 text-xs font-medium text-[var(--text-primary)]">{t('signIn')}</Link>
+            ))}
           </div>
-        </div>
+        </nav>
       )}
     </header>
   )

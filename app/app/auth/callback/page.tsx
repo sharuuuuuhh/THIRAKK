@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { getSafeAuthDestination } from '@/lib/auth-redirect'
 import { Loader2, CheckCircle2, AlertCircle } from 'lucide-react'
 
 export default function AuthCallbackPage() {
@@ -11,44 +12,73 @@ export default function AuthCallbackPage() {
   const [errorMsg, setErrorMsg] = useState('')
 
   useEffect(() => {
+    let active = true
+    let completed = false
+    let unsubscribe = () => {}
+    const params = new URLSearchParams(window.location.search)
+    const destination = getSafeAuthDestination(params.get('next'))
+    const providerError = params.get('error_description')
+
+    if (providerError) {
+      const timer = window.setTimeout(() => {
+        setStatus('error')
+        setErrorMsg(providerError)
+      }, 0)
+      return () => {
+        active = false
+        window.clearTimeout(timer)
+      }
+    }
+
+    function complete() {
+      if (!active || completed) return
+      completed = true
+      setStatus('success')
+      router.replace(destination)
+      router.refresh()
+    }
+
     async function handleAuth() {
       try {
-        const { data, error } = await supabase.auth.getSession()
+        const { data } = supabase.auth.onAuthStateChange((event, session) => {
+          if (session && (event === 'SIGNED_IN' || event === 'PASSWORD_RECOVERY' || event === 'INITIAL_SESSION')) {
+            complete()
+            unsubscribe()
+          }
+        })
+        unsubscribe = () => data.subscription.unsubscribe()
+
+        const { data: sessionData, error } = await supabase.auth.getSession()
+        if (!active) {
+          unsubscribe()
+          return
+        }
         if (error) {
-          console.error('Auth callback error:', error)
+          unsubscribe()
           setStatus('error')
-          setErrorMsg(error.message)
+          setErrorMsg('This sign-in link could not be verified. Request a new link and try again.')
           return
         }
 
-        if (data.session) {
-          setStatus('success')
-          setTimeout(() => {
-            router.push('/')
-            router.refresh()
-          }, 800)
+        if (sessionData.session) {
+          complete()
         } else {
-          // Listen for token exchange
-          const { data: authListener } = supabase.auth.onAuthStateChange(
-            (event, session) => {
-              if (session) {
-                setStatus('success')
-                authListener.subscription.unsubscribe()
-                setTimeout(() => {
-                  router.push('/')
-                  router.refresh()
-                }, 800)
-              }
-            }
-          )
+          unsubscribe()
+          setStatus('error')
+          setErrorMsg('This sign-in link is invalid or has expired. Request a new link and try again.')
         }
-      } catch (err: unknown) {
+      } catch {
+        if (!active) return
         setStatus('error')
-        setErrorMsg(err instanceof Error ? err.message : 'Authentication failed')
+        setErrorMsg('Authentication could not be completed. Request a new link and try again.')
       }
     }
 
     handleAuth()
+    return () => {
+      active = false
+      unsubscribe()
+    }
   }, [router])
 
   return (
@@ -59,7 +89,7 @@ export default function AuthCallbackPage() {
             <Loader2 className="h-10 w-10 animate-spin text-blue-600" />
             <h2 className="text-lg font-semibold text-gray-900">Verifying session...</h2>
             <p className="text-sm text-gray-500">
-              Please wait while we complete your authentication.
+              Please wait while we verify your link.
             </p>
           </div>
         )}

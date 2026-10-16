@@ -4,17 +4,15 @@ import React from 'react'
 import Link from 'next/link'
 import type { StretchCrowd } from '@/lib/types'
 import { CROWD_COLORS, NO_DATA_COLOR } from '@/lib/types'
-import { Train, Camera, ArrowRight, ShieldCheck, Clock } from 'lucide-react'
+import { Camera, ArrowRight, Info } from 'lucide-react'
 
 interface StretchDetailsCardProps {
   stretch: StretchCrowd | null
-  activeTrains: any[]
   timeMode: 'now' | 'later' | 'tomorrow'
 }
 
 export default function StretchDetailsCard({
   stretch,
-  activeTrains,
   timeMode,
 }: StretchDetailsCardProps) {
   if (!stretch) {
@@ -27,7 +25,7 @@ export default function StretchDetailsCard({
     )
   }
 
-  const { from_station, to_station, level, confidence, report_count, photo_count, label } = stretch
+  const { from_station, to_station, level, confidence, report_count, label } = stretch
   const badgeColor = level ? CROWD_COLORS[level] : NO_DATA_COLOR
 
   function getCrowdDescription(lvl: number | null) {
@@ -35,7 +33,7 @@ export default function StretchDetailsCard({
     if (lvl === 2) return 'Standing passengers in vestibules, moderate crowding'
     if (lvl === 3) return 'Doorways congested, heavy crush inside'
     if (lvl === 4) return 'Passengers unable to board at platform'
-    return 'No verified reports in the past 45 minutes'
+    return 'No recent reports in the past 45 minutes'
   }
 
   function getStatusChipClass(lvl: number | null) {
@@ -77,10 +75,10 @@ export default function StretchDetailsCard({
         </p>
 
         <div className="flex items-center gap-2 text-[11px] text-slate-400">
-          <ShieldCheck className="h-3.5 w-3.5 text-blue-400 shrink-0" />
+          <Info className="h-3.5 w-3.5 text-blue-400 shrink-0" aria-hidden="true" />
           <span>
             {report_count > 0
-              ? `${report_count} passenger reports (${photo_count} photo-verified) · ${confidence} confidence`
+              ? `${report_count} ${stretch.is_sample ? 'sample reports' : 'passenger reports'} · ${confidence} confidence · photo analysis unavailable`
               : 'Grey status: No recent data · Awaiting live passenger reports'}
           </span>
         </div>
