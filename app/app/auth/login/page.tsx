@@ -1,14 +1,17 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/auth-context'
+import { useLanguage } from '@/lib/language-context'
+import { getSafeAuthDestination } from '@/lib/auth-redirect'
 import { Eye, EyeOff, Lock, Mail, ArrowRight, Loader2, AlertCircle, CheckCircle2, Train } from 'lucide-react'
 
 export default function LoginPage() {
   const router = useRouter()
   const { signInWithEmail, signInWithGoogle, user } = useAuth()
+  const { t } = useLanguage()
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -17,6 +20,29 @@ export default function LoginPage() {
   const [googleLoading, setGoogleLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
+  const [nextPath, setNextPath] = useState('/')
+  const [nextPathReady, setNextPathReady] = useState(false)
+
+  useEffect(() => {
+    const next = new URLSearchParams(window.location.search).get('next')
+    const timer = window.setTimeout(() => {
+      setNextPath(getSafeAuthDestination(next))
+      setNextPathReady(true)
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [])
+
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('password-reset') === 'success') {
+      const timer = window.setTimeout(() => setSuccessMsg(t('passwordResetComplete')), 0)
+      return () => window.clearTimeout(timer)
+    }
+    return undefined
+  }, [t])
+
+  useEffect(() => {
+    if (user && nextPathReady) router.replace(nextPath)
+  }, [nextPath, nextPathReady, router, user])
 
   // If already logged in
   if (user) {
@@ -60,7 +86,7 @@ export default function LoginPage() {
     } else {
       setSuccessMsg('Logged in successfully!')
       setTimeout(() => {
-        router.push('/')
+        router.replace(nextPath)
         router.refresh()
       }, 500)
     }
@@ -69,7 +95,7 @@ export default function LoginPage() {
   const handleGoogleLogin = async () => {
     setError(null)
     setGoogleLoading(true)
-    const { error } = await signInWithGoogle()
+    const { error } = await signInWithGoogle(nextPath)
     if (error) {
       setError(error)
       setGoogleLoading(false)
@@ -77,7 +103,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="mx-auto max-w-md px-4 py-10">
+      <div className="auth-screen mx-auto max-w-md px-4 py-10">
       {/* Header */}
       <div className="text-center mb-8">
         <Link href="/" className="inline-flex items-center gap-2 mb-3">
@@ -88,7 +114,7 @@ export default function LoginPage() {
         </Link>
         <h1 className="text-xl font-semibold text-gray-900">Welcome back</h1>
         <p className="mt-1 text-sm text-gray-500">
-          Sign in to report crowd levels, view live train forecasts & petitions
+          Sign in to submit a crowd report
         </p>
       </div>
 
@@ -152,7 +178,7 @@ export default function LoginPage() {
         {/* Form */}
         <form onSubmit={handleEmailLogin} className="space-y-4">
           <div>
-            <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
+            <label htmlFor="login-email" className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
               Email Address
             </label>
             <div className="relative">
@@ -160,7 +186,9 @@ export default function LoginPage() {
                 <Mail className="h-4 w-4" />
               </div>
               <input
+                id="login-email"
                 type="email"
+                autoComplete="email"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -172,16 +200,21 @@ export default function LoginPage() {
 
           <div>
             <div className="flex items-center justify-between mb-1">
-              <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider">
+              <label htmlFor="login-password" className="block text-xs font-semibold text-gray-700 uppercase tracking-wider">
                 Password
               </label>
+            <Link href="/auth/forgot-password" className="inline-flex min-h-11 items-center text-xs font-medium text-gray-600 underline underline-offset-2 hover:text-gray-900">
+              {t('forgotPassword')}
+            </Link>
             </div>
             <div className="relative">
               <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
                 <Lock className="h-4 w-4" />
               </div>
               <input
+                id="login-password"
                 type={showPassword ? 'text' : 'password'}
+                autoComplete="current-password"
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -191,6 +224,7 @@ export default function LoginPage() {
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
                 className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-gray-600"
               >
                 {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -220,7 +254,7 @@ export default function LoginPage() {
         <div className="mt-6 text-center text-sm text-gray-500">
           Don&apos;t have an account?{' '}
           <Link
-            href="/auth/signup"
+          href={`/auth/signup?next=${encodeURIComponent(nextPath)}`}
             className="font-semibold text-emerald-600 hover:text-emerald-700 underline underline-offset-2"
           >
             Create account

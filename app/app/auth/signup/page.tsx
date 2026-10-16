@@ -1,9 +1,10 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/auth-context'
+import { getSafeAuthDestination } from '@/lib/auth-redirect'
 import { Eye, EyeOff, Lock, Mail, User as UserIcon, ArrowRight, Loader2, AlertCircle, CheckCircle2, Train } from 'lucide-react'
 
 export default function SignUpPage() {
@@ -19,6 +20,21 @@ export default function SignUpPage() {
   const [googleLoading, setGoogleLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
+  const [nextPath, setNextPath] = useState('/')
+  const [nextPathReady, setNextPathReady] = useState(false)
+
+  useEffect(() => {
+    const next = new URLSearchParams(window.location.search).get('next')
+    const timer = window.setTimeout(() => {
+      setNextPath(getSafeAuthDestination(next))
+      setNextPathReady(true)
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [])
+
+  useEffect(() => {
+    if (user && nextPathReady) router.replace(nextPath)
+  }, [nextPath, nextPathReady, router, user])
 
   // If already logged in
   if (user) {
@@ -53,8 +69,8 @@ export default function SignUpPage() {
       return
     }
 
-    if (password.length < 6) {
-      setError('Password should be at least 6 characters long.')
+    if (password.length < 8) {
+      setError('Use a password with at least 8 characters.')
       return
     }
 
@@ -64,15 +80,19 @@ export default function SignUpPage() {
     }
 
     setLoading(true)
-    const { error } = await signUpWithEmail(email.trim(), password, fullName.trim() || undefined)
+    const { error, requiresEmailConfirmation } = await signUpWithEmail(
+      email.trim(), password, fullName.trim() || undefined, nextPath
+    )
     setLoading(false)
 
     if (error) {
       setError(error)
+    } else if (requiresEmailConfirmation) {
+      setSuccessMsg('Check your inbox for a confirmation link. Sign in after you confirm your email.')
     } else {
-      setSuccessMsg('Account created successfully! Redirecting...')
+      setSuccessMsg('Account created. Redirecting...')
       setTimeout(() => {
-        router.push('/')
+        router.replace(nextPath)
         router.refresh()
       }, 700)
     }
@@ -81,7 +101,7 @@ export default function SignUpPage() {
   const handleGoogleSignUp = async () => {
     setError(null)
     setGoogleLoading(true)
-    const { error } = await signInWithGoogle()
+    const { error } = await signInWithGoogle(nextPath)
     if (error) {
       setError(error)
       setGoogleLoading(false)
@@ -89,7 +109,7 @@ export default function SignUpPage() {
   }
 
   return (
-    <div className="mx-auto max-w-md px-4 py-10">
+    <div className="auth-screen mx-auto max-w-md px-4 py-10">
       {/* Header */}
       <div className="text-center mb-8">
         <Link href="/" className="inline-flex items-center gap-2 mb-3">
@@ -164,7 +184,7 @@ export default function SignUpPage() {
         {/* Form */}
         <form onSubmit={handleEmailSignUp} className="space-y-4">
           <div>
-            <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
+            <label htmlFor="signup-name" className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
               Your Name (Optional)
             </label>
             <div className="relative">
@@ -172,7 +192,9 @@ export default function SignUpPage() {
                 <UserIcon className="h-4 w-4" />
               </div>
               <input
+                id="signup-name"
                 type="text"
+                autoComplete="name"
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
                 placeholder="Sharun"
@@ -182,7 +204,7 @@ export default function SignUpPage() {
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
+            <label htmlFor="signup-email" className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
               Email Address
             </label>
             <div className="relative">
@@ -190,7 +212,9 @@ export default function SignUpPage() {
                 <Mail className="h-4 w-4" />
               </div>
               <input
+                id="signup-email"
                 type="email"
+                autoComplete="email"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -201,7 +225,7 @@ export default function SignUpPage() {
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
+            <label htmlFor="signup-password" className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
               Password
             </label>
             <div className="relative">
@@ -209,17 +233,20 @@ export default function SignUpPage() {
                 <Lock className="h-4 w-4" />
               </div>
               <input
+                id="signup-password"
                 type={showPassword ? 'text' : 'password'}
+                autoComplete="new-password"
                 required
-                minLength={6}
+                minLength={8}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="At least 6 characters"
+                placeholder="At least 8 characters"
                 className="w-full rounded-xl border border-gray-300 py-2.5 pl-10 pr-10 text-sm text-gray-900 placeholder:text-gray-400 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
                 className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400 hover:text-gray-600"
               >
                 {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -228,7 +255,7 @@ export default function SignUpPage() {
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
+            <label htmlFor="signup-confirm-password" className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">
               Confirm Password
             </label>
             <div className="relative">
@@ -236,7 +263,9 @@ export default function SignUpPage() {
                 <Lock className="h-4 w-4" />
               </div>
               <input
+                id="signup-confirm-password"
                 type={showPassword ? 'text' : 'password'}
+                autoComplete="new-password"
                 required
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
@@ -268,7 +297,7 @@ export default function SignUpPage() {
         <div className="mt-6 text-center text-sm text-gray-500">
           Already have an account?{' '}
           <Link
-            href="/auth/login"
+            href={`/auth/login?next=${encodeURIComponent(nextPath)}`}
             className="font-semibold text-gray-900 hover:text-black underline underline-offset-2"
           >
             Sign in

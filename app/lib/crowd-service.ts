@@ -1,5 +1,6 @@
 import { INDIA_STATIONS, INDIA_TRAINS, INDIA_ROUTES } from '@/lib/data/india-railways-data'
-import type { Station, StretchCrowd, CrowdLevel, Train } from '@/lib/types'
+import type { TrainData } from '@/lib/data/india-railways-data'
+import type { Station, StretchCrowd, CrowdLevel } from '@/lib/types'
 import { CROWD_LABELS } from '@/lib/types'
 
 // Mock / Pre-seeded realistic reports for Kerala Corridors (Labelled clearly as sample data)
@@ -8,33 +9,35 @@ export interface SeedReportItem {
   toCode: string
   trainNumber: string
   level: CrowdLevel
-  photoMatch: 'agree' | 'close' | 'differ'
+  photoMatch: 'agree' | 'close' | 'differ' | 'unverified'
   isVolunteer: boolean
   minutesAgo: number
+  isSample?: boolean
 }
 
 export const SAMPLE_CROWD_REPORTS: SeedReportItem[] = [
-  // Malabar Corridor: CAN -> CLT (Default space available)
-  { fromCode: 'CAN', toCode: 'TLY', trainNumber: '16308', level: 1, photoMatch: 'agree', isVolunteer: true, minutesAgo: 8 },
-  { fromCode: 'TLY', toCode: 'MAHE', trainNumber: '16308', level: 1, photoMatch: 'agree', isVolunteer: false, minutesAgo: 15 },
-  { fromCode: 'MAHE', toCode: 'BDJ', trainNumber: '16308', level: 1, photoMatch: 'agree', isVolunteer: false, minutesAgo: 19 },
-  { fromCode: 'BDJ', toCode: 'QLD', trainNumber: '16308', level: 1, photoMatch: 'agree', isVolunteer: true, minutesAgo: 11 },
-  { fromCode: 'QLD', toCode: 'FK', trainNumber: '16308', level: 1, photoMatch: 'agree', isVolunteer: false, minutesAgo: 25 },
-  { fromCode: 'FK', toCode: 'CLT', trainNumber: '16308', level: 1, photoMatch: 'agree', isVolunteer: false, minutesAgo: 30 },
+  // Malabar Corridor: sample reports align to the selected train's stops.
+  { fromCode: 'CAN', toCode: 'CS', trainNumber: '16308', level: 1, photoMatch: 'unverified', isVolunteer: false, minutesAgo: 8 },
+  { fromCode: 'CS', toCode: 'ETK', trainNumber: '16308', level: 1, photoMatch: 'unverified', isVolunteer: false, minutesAgo: 12 },
+  { fromCode: 'ETK', toCode: 'TLY', trainNumber: '16308', level: 1, photoMatch: 'unverified', isVolunteer: false, minutesAgo: 15 },
+  { fromCode: 'TLY', toCode: 'MAHE', trainNumber: '16308', level: 1, photoMatch: 'unverified', isVolunteer: false, minutesAgo: 18 },
+  { fromCode: 'MAHE', toCode: 'BDJ', trainNumber: '16308', level: 1, photoMatch: 'unverified', isVolunteer: false, minutesAgo: 11 },
+  { fromCode: 'BDJ', toCode: 'PYOL', trainNumber: '16308', level: 1, photoMatch: 'unverified', isVolunteer: false, minutesAgo: 23 },
+  { fromCode: 'PYOL', toCode: 'QLD', trainNumber: '16308', level: 1, photoMatch: 'unverified', isVolunteer: false, minutesAgo: 25 },
+  { fromCode: 'QLD', toCode: 'ETR', trainNumber: '16308', level: 1, photoMatch: 'unverified', isVolunteer: false, minutesAgo: 30 },
+  { fromCode: 'ETR', toCode: 'CLT', trainNumber: '16308', level: 1, photoMatch: 'unverified', isVolunteer: false, minutesAgo: 32 },
 
   // Central Corridor: TCR -> ERS (Default space available)
-  { fromCode: 'TCR', toCode: 'IJK', trainNumber: '16306', level: 1, photoMatch: 'agree', isVolunteer: true, minutesAgo: 6 },
-  { fromCode: 'IJK', toCode: 'CKI', trainNumber: '16306', level: 1, photoMatch: 'agree', isVolunteer: false, minutesAgo: 18 },
-  { fromCode: 'CKI', toCode: 'AFK', trainNumber: '16306', level: 1, photoMatch: 'agree', isVolunteer: false, minutesAgo: 20 },
-  { fromCode: 'AFK', toCode: 'AWY', trainNumber: '16306', level: 1, photoMatch: 'agree', isVolunteer: true, minutesAgo: 9 },
-  { fromCode: 'AWY', toCode: 'ERS', trainNumber: '16306', level: 1, photoMatch: 'agree', isVolunteer: false, minutesAgo: 12 },
+  { fromCode: 'TCR', toCode: 'IJK', trainNumber: '16306', level: 1, photoMatch: 'unverified', isVolunteer: false, minutesAgo: 6 },
+  { fromCode: 'IJK', toCode: 'CKI', trainNumber: '16306', level: 1, photoMatch: 'unverified', isVolunteer: false, minutesAgo: 18 },
+  { fromCode: 'CKI', toCode: 'AFK', trainNumber: '16306', level: 1, photoMatch: 'unverified', isVolunteer: false, minutesAgo: 20 },
+  { fromCode: 'AFK', toCode: 'AWY', trainNumber: '16306', level: 1, photoMatch: 'unverified', isVolunteer: false, minutesAgo: 9 },
+  { fromCode: 'AWY', toCode: 'ERN', trainNumber: '16306', level: 1, photoMatch: 'unverified', isVolunteer: false, minutesAgo: 12 },
+  { fromCode: 'ERN', toCode: 'ERS', trainNumber: '16306', level: 1, photoMatch: 'unverified', isVolunteer: false, minutesAgo: 15 },
 
-  // South Kerala: TVC -> QLN -> KTYM (Default space available)
-  { fromCode: 'TVC', toCode: 'QLN', trainNumber: '12076', level: 1, photoMatch: 'agree', isVolunteer: false, minutesAgo: 25 },
-  { fromCode: 'QLN', toCode: 'KYJ', trainNumber: '12076', level: 1, photoMatch: 'agree', isVolunteer: false, minutesAgo: 35 },
-  { fromCode: 'KYJ', toCode: 'CNGR', trainNumber: '12076', level: 1, photoMatch: 'agree', isVolunteer: false, minutesAgo: 40 },
-  { fromCode: 'CNGR', toCode: 'TRVL', trainNumber: '12076', level: 1, photoMatch: 'agree', isVolunteer: false, minutesAgo: 45 },
-  { fromCode: 'TRVL', toCode: 'KTYM', trainNumber: '12076', level: 1, photoMatch: 'agree', isVolunteer: false, minutesAgo: 48 },
+  // South Kerala: the seeded northbound service stops at Varkala before Kollam.
+  { fromCode: 'TVC', toCode: 'VAK', trainNumber: '12075', level: 2, photoMatch: 'unverified', isVolunteer: false, minutesAgo: 25 },
+  { fromCode: 'VAK', toCode: 'QLN', trainNumber: '12075', level: 2, photoMatch: 'unverified', isVolunteer: false, minutesAgo: 35 },
 ]
 
 /**
@@ -57,11 +60,24 @@ export function getStationByCode(code: string): Station | null {
 /**
  * Get all ordered stations between two stations along any matching train or route
  */
-export function getRouteStations(fromCode: string, toCode: string): Station[] {
+export function getRouteStations(fromCode: string, toCode: string, trainNumber?: string): Station[] {
   if (!fromCode || !toCode) return []
   if (fromCode === toCode) {
     const s = getStationByCode(fromCode)
     return s ? [s] : []
+  }
+
+  if (trainNumber) {
+    const train = INDIA_TRAINS.find((item) => item.number === trainNumber)
+    const stopCodes = train?.stops.map((stop) => stop.station_code) ?? []
+    const fromIndex = stopCodes.indexOf(fromCode)
+    const toIndex = stopCodes.indexOf(toCode)
+    if (fromIndex !== -1 && toIndex !== -1) {
+      const codes = fromIndex < toIndex
+        ? stopCodes.slice(fromIndex, toIndex + 1)
+        : stopCodes.slice(toIndex, fromIndex + 1).reverse()
+      return codes.map(getStationByCode).filter((station): station is Station => station !== null)
+    }
   }
 
   // 1. Check predefined corridors
@@ -95,17 +111,15 @@ export function getRouteStations(fromCode: string, toCode: string): Station[] {
     }
   }
 
-  // Fallback: direct two stations
-  const st1 = getStationByCode(fromCode)
-  const st2 = getStationByCode(toCode)
-  if (st1 && st2) return [st1, st2]
+  // Do not draw a fictional direct connection when the selected stations
+  // are not part of a seeded corridor or train route.
   return []
 }
 
 /**
  * Get active trains on a given route/stretch
  */
-export function getTrainsOnRoute(fromCode: string, toCode: string): any[] {
+export function getTrainsOnRoute(fromCode: string, toCode: string): TrainData[] {
   const direct = INDIA_TRAINS.filter((train) => {
     const fIdx = train.stops.findIndex((s) => s.station_code === fromCode)
     const tIdx = train.stops.findIndex((s) => s.station_code === toCode)
@@ -123,17 +137,7 @@ export function getTrainsOnRoute(fromCode: string, toCode: string): any[] {
 
   if (reverse.length > 0) return reverse
 
-  // Fallback: Return trains containing either fromCode or toCode
-  const partial = INDIA_TRAINS.filter(
-    (t) =>
-      t.stops.some((s) => s.station_code === fromCode) ||
-      t.stops.some((s) => s.station_code === toCode)
-  )
-
-  if (partial.length > 0) return partial.slice(0, 6)
-
-  // Global fallback: default active Indian commuter & express trains
-  return INDIA_TRAINS.slice(0, 6)
+  return []
 }
 
 /**
@@ -141,7 +145,9 @@ export function getTrainsOnRoute(fromCode: string, toCode: string): any[] {
  */
 export function computeRouteStretches(
   stations: Station[],
-  timeMode: 'now' | 'later' | 'tomorrow' = 'now'
+  timeMode: 'now' | 'later' | 'tomorrow' = 'now',
+  trainNumber?: string,
+  reports: SeedReportItem[] = SAMPLE_CROWD_REPORTS
 ): StretchCrowd[] {
   if (stations.length < 2) return []
 
@@ -152,41 +158,25 @@ export function computeRouteStretches(
     const to = stations[i + 1]
 
     // Find relevant reports
-    const matchingReports = SAMPLE_CROWD_REPORTS.filter(
+    const matchingReports = reports.filter(
       (r) =>
-        (r.fromCode === from.code && r.toCode === to.code) ||
-        (r.fromCode === from.code && r.minutesAgo <= 45)
+        r.fromCode === from.code &&
+        r.toCode === to.code &&
+        r.minutesAgo <= 45 &&
+        (!trainNumber || r.trainNumber === trainNumber)
     )
 
-    if (timeMode === 'tomorrow') {
-      // Forecast prediction logic
-      // In forecast mode: blend historical weekday average
-      const baseLevel = getHistoricalLevel(from.code, to.code)
+    if (timeMode === 'tomorrow' || timeMode === 'later') {
       stretches.push({
         from_station: from,
         to_station: to,
-        level: baseLevel,
-        confidence: baseLevel ? 'medium' : 'none',
-        report_count: baseLevel ? 24 : 0,
-        photo_count: baseLevel ? 20 : 0,
-        volunteer_count: baseLevel ? 3 : 0,
-        label: baseLevel ? CROWD_LABELS[baseLevel] : 'No recent reports',
-      })
-      continue
-    }
-
-    if (timeMode === 'later') {
-      // +2 Hours forecast (shifts down slightly after peak or changes with schedule)
-      const baseLevel = getLaterLevel(from.code, to.code)
-      stretches.push({
-        from_station: from,
-        to_station: to,
-        level: baseLevel,
-        confidence: baseLevel ? 'medium' : 'none',
-        report_count: baseLevel ? 14 : 0,
-        photo_count: baseLevel ? 12 : 0,
-        volunteer_count: baseLevel ? 1 : 0,
-        label: baseLevel ? CROWD_LABELS[baseLevel] : 'No recent reports',
+        level: null,
+        confidence: 'none',
+        report_count: 0,
+        photo_count: 0,
+        volunteer_count: 0,
+        is_sample: true,
+        label: 'No forecast data',
       })
       continue
     }
@@ -202,6 +192,7 @@ export function computeRouteStretches(
         report_count: 0,
         photo_count: 0,
         volunteer_count: 0,
+        is_sample: true,
         label: 'No recent reports',
       })
     } else {
@@ -253,22 +244,13 @@ export function computeRouteStretches(
         report_count: matchingReports.length,
         photo_count: photoCount,
         volunteer_count: volunteerCount,
+        is_sample: matchingReports.every((report) => report.isSample !== false),
         label: CROWD_LABELS[blendedLevel],
       })
     }
   }
 
   return stretches
-}
-
-function getHistoricalLevel(fromCode: string, toCode: string): CrowdLevel | null {
-  // Baseline capacity: space available (Seats free) unless an active rush/issue is logged
-  return 1
-}
-
-function getLaterLevel(fromCode: string, toCode: string): CrowdLevel | null {
-  // Baseline capacity: space available (Seats free) unless an active rush/issue is logged
-  return 1
 }
 
 function hashCode(str: string): number {

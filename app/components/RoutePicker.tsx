@@ -35,10 +35,10 @@ export default function RoutePicker({
       if (saved) {
         const parsed = JSON.parse(saved)
         if (parsed.from && parsed.to) {
-          setLastRoute(parsed)
+          queueMicrotask(() => setLastRoute(parsed))
         }
       }
-    } catch (e) {}
+    } catch {}
   }, [])
 
   const handleSwap = () => {
@@ -57,7 +57,7 @@ export default function RoutePicker({
           'thirakku_last_route',
           JSON.stringify({ from: localFrom, to: localTo })
         )
-      } catch (err) {}
+      } catch {}
       onSelectRoute(localFrom, localTo)
     }
   }
@@ -67,7 +67,7 @@ export default function RoutePicker({
     setLocalTo(to)
     try {
       localStorage.setItem('thirakku_last_route', JSON.stringify({ from, to }))
-    } catch (e) {}
+    } catch {}
     onSelectRoute(from, to)
   }
 

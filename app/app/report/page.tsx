@@ -1,8 +1,9 @@
 'use client'
 
-import React, { useState, useRef, useEffect, Suspense } from 'react'
+import React, { useState, useRef, useEffect, useCallback, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
+import Image from 'next/image'
 import { useAuth } from '@/lib/auth-context'
 import {
   INDIA_STATIONS,
@@ -10,61 +11,66 @@ import {
 } from '@/lib/data/india-railways-data'
 import { getStationByCode } from '@/lib/crowd-service'
 import type { CrowdLevel } from '@/lib/types'
-import { CROWD_LABELS, CROWD_COLORS } from '@/lib/types'
+import { CROWD_LABELS } from '@/lib/types'
 
 function ReportWizard() {
   const searchParams = useSearchParams()
-  const { userEmail, commuterId } = useAuth()
+  const { session } = useAuth()
 
   const queryFrom = searchParams.get('from') || 'CAN'
-  const queryTo = searchParams.get('to') || 'TLY'
   const queryTrain = searchParams.get('train') || '16308'
 
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
 
   const [stationCode, setStationCode] = useState(queryFrom)
-  const [trainNumber, setTrainNumber] = useState(queryTrain)
-  const [selectedLevel, setSelectedLevel] = useState<CrowdLevel | null>(1)
+  const initialTrains = INDIA_TRAINS.filter((train) => train.stops.some((stop) => stop.station_code === queryFrom))
+  const [trainNumber, setTrainNumber] = useState(
+    initialTrains.some((train) => train.number === queryTrain) ? queryTrain : initialTrains[0]?.number ?? ''
+  )
+  const [selectedLevel, setSelectedLevel] = useState<CrowdLevel | null>(null)
   const [finalLevel, setFinalLevel] = useState<CrowdLevel>(1)
 
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null)
   const [isCapturing, setIsCapturing] = useState(false)
   const [capturedImage, setCapturedImage] = useState<string | null>(null)
+  const [cameraError, setCameraError] = useState<string | null>(null)
 
-  const [locationStatus, setLocationStatus] = useState<'pending' | 'verified'>('pending')
-  const [matchedStationName, setMatchedStationName] = useState<string>('')
+  const [locationStatus, setLocationStatus] = useState<'pending' | 'located'>('pending')
+  const [reportCoordinates, setReportCoordinates] = useState<{ latitude: number; longitude: number } | null>(null)
 
-  const [isAnalyzing, setIsAnalyzing] = useState(false)
-  const [photoEstimatedLevel, setPhotoEstimatedLevel] = useState<CrowdLevel>(1)
-  const [matchResult, setMatchResult] = useState<'agree' | 'close' | 'differ'>('agree')
-  const [analysisMetrics, setAnalysisMetrics] = useState<{
-    crowdDensityScore?: number
-    aisleCongestion?: string
-    doorwayStatus?: string
-    standingPassengerCount?: string
-    aiObservations?: string[]
-  } | null>(null)
 
-  const [alreadyReportedToday, setAlreadyReportedToday] = useState(false)
+  const [cameraReady, setCameraReady] = useState(false)
 
-  useEffect(() => {
-    try {
-      const today = new Date().toISOString().split('T')[0]
-      const key = `thirakku_report_${today}_${trainNumber}`
-      if (localStorage.getItem(key)) {
-        setAlreadyReportedToday(true)
-      }
-    } catch (e) {}
-  }, [trainNumber])
+  const performLocationCheck = useCallback(() => {
+    if (!navigator.geolocation) {
+      setLocationStatus('pending')
+      return
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setReportCoordinates({ latitude: pos.coords.latitude, longitude: pos.coords.longitude })
+        setLocationStatus('located')
+      },
+      () => {
+        setReportCoordinates(null)
+        setLocationStatus('pending')
+      },
+      { timeout: 5000, enableHighAccuracy: false }
+    )
+  }, [])
 
   useEffect(() => {
     let activeStream: MediaStream | null = null
+    let disposed = false
+    const videoElement = videoRef.current
 
     if (step === 2) {
       async function startCamera() {
+        setCameraError(null)
         try {
           const stream = await navigator.mediaDevices.getUserMedia({
             video: {
@@ -74,60 +80,47 @@ function ReportWizard() {
             },
             audio: false,
           })
-          activeStream = stream
-          setCameraStream(stream)
-          if (videoRef.current) {
-            videoRef.current.srcObject = stream
+          if (disposed) {
+            stream.getTracks().forEach((track) => track.stop())
+            return
           }
-        } catch (err: any) {
-          console.warn('Camera access fallback')
+          activeStream = stream
+          if (videoElement) {
+            videoElement.srcObject = stream
+          }
+        } catch {
+          if (!disposed) setCameraError('Camera access is required to take a report photo.')
         }
       }
 
       startCamera()
+      // Geolocation updates report state from its browser callback.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       performLocationCheck()
-    } else {
-      if (cameraStream) {
-        cameraStream.getTracks().forEach((track) => track.stop())
-        setCameraStream(null)
-      }
     }
 
     return () => {
+      disposed = true
       if (activeStream) {
         activeStream.getTracks().forEach((track) => track.stop())
+        if (videoElement?.srcObject === activeStream) videoElement.srcObject = null
       }
     }
-  }, [step])
+  }, [step, performLocationCheck])
 
-  const performLocationCheck = () => {
-    if (!navigator.geolocation) {
-      setLocationStatus('verified')
-      setMatchedStationName(getStationByCode(stationCode)?.name || stationCode)
-      return
-    }
-
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setLocationStatus('verified')
-        const station = getStationByCode(stationCode)
-        setMatchedStationName(station?.name || stationCode)
-      },
-      (err) => {
-        setLocationStatus('verified')
-        setMatchedStationName(getStationByCode(stationCode)?.name || stationCode)
-      },
-      { timeout: 5000, enableHighAccuracy: false }
-    )
-  }
-
-  const handleCapturePhoto = async () => {
+  const handleCapturePhoto = () => {
     setIsCapturing(true)
     const video = videoRef.current
     const canvas = canvasRef.current
 
     if (!video || !canvas) {
-      simulatePhotoCapture()
+      setCameraError('Camera is unavailable. Allow camera access and try again.')
+      setIsCapturing(false)
+      return
+    }
+    if (!cameraReady || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+      setCameraError('The camera is still starting. Wait for the preview, then try again.')
+      setIsCapturing(false)
       return
     }
 
@@ -138,19 +131,13 @@ function ReportWizard() {
       canvas.height = height
 
       const ctx = canvas.getContext('2d')
-      if (!ctx) return
+      if (!ctx) throw new Error('Canvas unavailable')
 
       ctx.drawImage(video, 0, 0, width, height)
 
-      // On-Device Face Blur (AGENTS.md rule 3)
-      ctx.filter = 'blur(14px)'
-      ctx.fillRect(width * 0.25, height * 0.2, width * 0.22, height * 0.25)
-      ctx.fillRect(width * 0.58, height * 0.25, width * 0.2, height * 0.22)
-      ctx.filter = 'none'
-
       // Timestamp watermark
       const now = new Date()
-      const timeStr = `${now.toLocaleDateString()} ${now.toLocaleTimeString()} IST - Face-blurred on device`
+      const timeStr = `${now.toLocaleDateString()} ${now.toLocaleTimeString()}`
       ctx.fillStyle = 'rgba(0, 0, 0, 0.75)'
       ctx.fillRect(10, height - 34, width - 20, 24)
       ctx.fillStyle = '#ffffff'
@@ -159,149 +146,47 @@ function ReportWizard() {
 
       const base64 = canvas.toDataURL('image/jpeg', 0.8)
       setCapturedImage(base64)
-      await analyzePhotoOnBackend(base64)
-    } catch (e) {
-      simulatePhotoCapture()
+      setFinalLevel(selectedLevel || 1)
+      setStep(3)
+    } catch {
+      setCameraError('Could not capture a photo. Please try again.')
     } finally {
       setIsCapturing(false)
     }
   }
 
-  const simulatePhotoCapture = async () => {
-    const canvas = canvasRef.current
-    if (canvas) {
-      canvas.width = 640
-      canvas.height = 480
-      const ctx = canvas.getContext('2d')
-      if (ctx) {
-        ctx.fillStyle = '#1e293b'
-        ctx.fillRect(0, 0, 640, 480)
-        ctx.fillStyle = '#0f172a'
-        ctx.fillRect(40, 80, 560, 320)
-
-        ctx.fillStyle = 'rgba(15, 23, 42, 0.95)'
-        ctx.fillRect(160, 160, 80, 80)
-        ctx.fillRect(380, 180, 80, 80)
-
-        const now = new Date()
-        const timeStr = `${now.toLocaleDateString()} ${now.toLocaleTimeString()} IST - Face-blurred on device`
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.8)'
-        ctx.fillRect(10, 440, 620, 30)
-        ctx.fillStyle = '#ffffff'
-        ctx.font = 'bold 12px sans-serif'
-        ctx.fillText(timeStr, 20, 460)
-
-        const base64 = canvas.toDataURL('image/jpeg', 0.8)
-        setCapturedImage(base64)
-        await analyzePhotoOnBackend(base64)
-      }
-    }
-  }
-
-  const analyzePhotoOnBackend = async (base64: string) => {
-    setIsAnalyzing(true)
-    try {
-      const res = await fetch('/api/analyze-photo', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          imageBase64: base64,
-          userLevel: selectedLevel || 1,
-          stationCode,
-          trainNumber,
-        }),
-      })
-
-      const data = await res.json()
-      if (res.ok) {
-        setPhotoEstimatedLevel(data.estimatedLevel || selectedLevel || 1)
-        setMatchResult(data.matchType || 'agree')
-        setFinalLevel(selectedLevel || 1)
-        setAnalysisMetrics({
-          crowdDensityScore: data.densityMetrics?.crowdDensityScore || 18,
-          aisleCongestion: data.densityMetrics?.aisleCongestion || 'Clear & Open',
-          doorwayStatus: data.densityMetrics?.doorwayStatus || 'Free Flow',
-          standingPassengerCount: data.densityMetrics?.standingPassengerCount || '0 - 4 standing',
-          aiObservations: data.aiObservations || [
-            'Aisle gangway clear for passenger transit',
-            'Unoccupied seating spaces detected across bays',
-          ],
-        })
-      } else {
-        setPhotoEstimatedLevel(selectedLevel || 1)
-        setMatchResult('agree')
-        setFinalLevel(selectedLevel || 1)
-      }
-    } catch (err) {
-      setPhotoEstimatedLevel(selectedLevel || 1)
-      setMatchResult('agree')
-      setFinalLevel(selectedLevel || 1)
-    } finally {
-      setIsAnalyzing(false)
-      setStep(3)
-    }
-  }
-
   const handleConfirmSend = async () => {
     setIsSubmitting(true)
+    setSubmitError(null)
+    let submitted = false
     try {
-      const today = new Date().toISOString().split('T')[0]
-      const key = `thirakku_report_${today}_${trainNumber}`
+      if (!session?.access_token) throw new Error('Sign in again to submit your report.')
+      if (!reportCoordinates) throw new Error('Allow location access near your station before submitting.')
       const reportPayload = {
         trainNumber,
-        fromCode: stationCode,
-        toCode: queryTo || stationCode,
-        level: finalLevel,
-        photoMatch: matchResult,
-        userEmail: userEmail || undefined,
-        deviceHash: commuterId || 'dev-anon',
         stationCode,
-        timestamp: Date.now(),
+        level: finalLevel,
+        photoMatch: 'unverified',
+        ...reportCoordinates,
       }
-
-      // Save locally immediately
-      localStorage.setItem(key, JSON.stringify({ level: finalLevel, timestamp: Date.now() }))
-
-      // Update local contributions list
-      try {
-        const rawHistory = localStorage.getItem('thirakku_contributions_list')
-        const history = rawHistory ? JSON.parse(rawHistory) : []
-        history.unshift({
-          id: `rep_${Date.now()}`,
-          trainNumber,
-          stationCode,
-          level: finalLevel,
-          photoMatch: matchResult,
-          points: matchResult === 'agree' ? 15 : 10,
-          timestamp: Date.now(),
-          travelDate: today,
-        })
-        localStorage.setItem('thirakku_contributions_list', JSON.stringify(history.slice(0, 50)))
-      } catch (e) {}
-
-      // 1. Post to crowd blend API
-      fetch('/api/crowd', {
+      const response = await fetch('/api/crowd', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
         body: JSON.stringify(reportPayload),
-      }).catch((e) => console.warn('Crowd API sync fallback', e))
-
-      // 2. Post to contributions tracker API
-      await fetch('/api/contributions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(reportPayload),
-      }).catch((e) => console.warn('Contributions API sync fallback', e))
+      })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error || 'Could not save your report.')
+      setCapturedImage(null)
+      submitted = true
     } catch (e) {
-      console.warn('Report submission fallback', e)
+      setSubmitError(e instanceof Error ? e.message : 'Could not save your report. Please try again.')
     } finally {
       setIsSubmitting(false)
-      setStep(4)
+      if (submitted) setStep(4)
     }
   }
 
   const currentStation = getStationByCode(stationCode)
-  const currentTrain = INDIA_TRAINS.find((t) => t.number === trainNumber)
 
   return (
     <div className="mx-auto max-w-xl px-4 py-8 text-slate-900">
@@ -315,9 +200,9 @@ function ReportWizard() {
         </h1>
         <p className="text-xs text-slate-500 mt-0.5">
           {step === 1 && 'Select current crowd condition inside the general coach'}
-          {step === 2 && 'Live camera proof with automatic on-device face blurring'}
+          {step === 2 && 'Take a live photo. It stays on your device and is not analyzed.'}
           {step === 3 && 'Verify photo estimate against your selected level'}
-          {step === 4 && 'Crowd map updated in real time'}
+          {step === 4 && 'Your self-reported crowd level was saved as unverified.'}
         </p>
       </div>
 
@@ -329,7 +214,14 @@ function ReportWizard() {
               <label className="font-bold text-slate-700 block mb-1">Boarding Station</label>
               <select
                 value={stationCode}
-                onChange={(e) => setStationCode(e.target.value)}
+                onChange={(e) => {
+                  const nextStation = e.target.value
+                  const nextTrains = INDIA_TRAINS.filter((train) => train.stops.some((stop) => stop.station_code === nextStation))
+                  setStationCode(nextStation)
+                  if (!nextTrains.some((train) => train.number === trainNumber)) {
+                    setTrainNumber(nextTrains[0]?.number ?? '')
+                  }
+                }}
                 className="w-full rounded border border-slate-300 bg-white p-2 text-xs font-semibold text-slate-900"
               >
                 {INDIA_STATIONS.filter((s) => s.state === 'Kerala').map((st) => (
@@ -347,7 +239,7 @@ function ReportWizard() {
                 onChange={(e) => setTrainNumber(e.target.value)}
                 className="w-full rounded border border-slate-300 bg-white p-2 text-xs font-semibold text-slate-900"
               >
-                {INDIA_TRAINS.map((tr) => (
+                {INDIA_TRAINS.filter((train) => train.stops.some((stop) => stop.station_code === stationCode)).map((tr) => (
                   <option key={tr.number} value={tr.number}>
                     {tr.number} - {tr.name}
                   </option>
@@ -365,6 +257,7 @@ function ReportWizard() {
             {/* Level 1 (Default: Seats free) */}
             <button
               type="button"
+              aria-pressed={selectedLevel === 1}
               onClick={() => setSelectedLevel(1)}
               className={`w-full flex items-center justify-between border p-3.5 rounded text-left ${
                 selectedLevel === 1
@@ -389,6 +282,7 @@ function ReportWizard() {
             {/* Level 2 */}
             <button
               type="button"
+              aria-pressed={selectedLevel === 2}
               onClick={() => setSelectedLevel(2)}
               className={`w-full flex items-center justify-between border p-3.5 rounded text-left ${
                 selectedLevel === 2
@@ -408,6 +302,7 @@ function ReportWizard() {
             {/* Level 3 */}
             <button
               type="button"
+              aria-pressed={selectedLevel === 3}
               onClick={() => setSelectedLevel(3)}
               className={`w-full flex items-center justify-between border p-3.5 rounded text-left ${
                 selectedLevel === 3
@@ -428,6 +323,7 @@ function ReportWizard() {
             <div className="text-center pt-2">
               <button
                 type="button"
+                aria-pressed={selectedLevel === 4}
                 onClick={() => setSelectedLevel(4)}
                 className={`text-xs underline ${
                   selectedLevel === 4 ? 'text-red-900 font-bold' : 'text-slate-600 hover:text-slate-900'
@@ -438,16 +334,11 @@ function ReportWizard() {
             </div>
           </div>
 
-          {alreadyReportedToday && (
-            <div className="border border-slate-300 bg-slate-50 p-2.5 rounded text-xs text-slate-700">
-              Note: You have already logged a report for train {trainNumber} today.
-            </div>
-          )}
-
           <button
             type="button"
+            disabled={!selectedLevel || !trainNumber}
             onClick={() => setStep(2)}
-            className="w-full rounded bg-slate-900 py-3 text-sm font-semibold text-white hover:bg-slate-800 text-center"
+            className="w-full min-h-12 rounded bg-slate-900 py-3 text-sm font-semibold text-white hover:bg-slate-800 text-center disabled:cursor-not-allowed disabled:opacity-50"
           >
             Next: Take photo
           </button>
@@ -464,6 +355,7 @@ function ReportWizard() {
               autoPlay
               playsInline
               muted
+              onCanPlay={() => setCameraReady(true)}
               className="h-full w-full object-cover"
             />
             <canvas ref={canvasRef} className="hidden" />
@@ -474,10 +366,10 @@ function ReportWizard() {
               <div className="flex w-full items-center justify-between">
                 <span className="rounded bg-emerald-950/90 border border-emerald-500/50 px-2 py-0.5 text-[10px] font-bold text-emerald-300 flex items-center gap-1 backdrop-blur-xs">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-ping" />
-                  🔒 Face blur active on device
+                  Live camera
                 </span>
                 <span className="rounded bg-slate-900/80 px-2 py-0.5 text-[10px] font-semibold text-slate-300 backdrop-blur-xs">
-                  Aisle Align
+                  Photo preview
                 </span>
               </div>
 
@@ -485,14 +377,14 @@ function ReportWizard() {
               <div className="relative flex flex-col items-center justify-center opacity-75">
                 <div className="h-16 w-32 border-x-2 border-dashed border-emerald-400/70" />
                 <span className="mt-1 text-[10px] font-bold tracking-wider text-emerald-300 drop-shadow">
-                  POINT DOWN CENTER AISLE
+                  Keep a safe distance
                 </span>
               </div>
 
               {/* Bottom Framing Line */}
               <div className="w-full flex justify-between text-[10px] text-slate-400 drop-shadow">
-                <span>Hold steady & eye-level</span>
-                <span>Zero storage</span>
+                <span>Capture only from a safe position</span>
+                <span>Stays on this device</span>
               </div>
             </div>
           </div>
@@ -500,45 +392,54 @@ function ReportWizard() {
           {/* Photo-Taking Best Practice Tips */}
           <div className="space-y-2 border border-slate-200 bg-slate-50 p-3 rounded text-xs">
             <div className="font-bold text-slate-800 flex items-center gap-1.5">
-              <span>💡</span>
-              <span>Photo tips for reliable crowd verification</span>
+              <span>Photo and location checks</span>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-slate-700 pt-1">
               <div className="flex items-start gap-1.5">
                 <span className="text-emerald-700 font-bold shrink-0">1.</span>
-                <span><strong>Aim down center aisle:</strong> Stand at the doorway and aim straight down the corridor to capture both seating and standing room.</span>
+                <span><strong>Stay safe:</strong> Do not block doors or aisles to take a photo.</span>
               </div>
               <div className="flex items-start gap-1.5">
                 <span className="text-emerald-700 font-bold shrink-0">2.</span>
-                <span><strong>Hold steady:</strong> Keep your hands stationary for 1 second. Avoid panning or rapid movement.</span>
+                <span><strong>Photo analysis:</strong> Not available yet. The photo is not uploaded or analyzed.</span>
               </div>
               <div className="flex items-start gap-1.5">
                 <span className="text-emerald-700 font-bold shrink-0">3.</span>
-                <span><strong>Privacy guaranteed:</strong> Faces are blurred in local browser memory before upload. The photo is deleted immediately after analysis.</span>
+                <span><strong>Privacy:</strong> The photo stays on this device and is not saved with your report.</span>
               </div>
               <div className="flex items-start gap-1.5">
                 <span className="text-emerald-700 font-bold shrink-0">4.</span>
-                <span><strong>Station safety:</strong> Only capture when stationary inside the coach or on the platform. Never take photos while stepping across the train gap.</span>
+                <span><strong>Location:</strong> Used once to check that you are near the selected station.</span>
               </div>
             </div>
           </div>
 
           <div className="flex items-center justify-between text-xs text-slate-700 px-1">
-            <span>Station: <strong>{matchedStationName || currentStation?.name || 'Matched'}</strong></span>
-            <span className="font-bold text-emerald-800 flex items-center gap-1">
-              <span>✓</span> Station Verified
+            <span>Selected station: <strong>{currentStation?.name || stationCode}</strong></span>
+            <span className={`font-bold flex items-center gap-1 ${locationStatus === 'located' ? 'text-emerald-800' : 'text-amber-800'}`}>
+              {locationStatus === 'located' ? 'Location captured' : 'Location required'}
             </span>
           </div>
 
+          <button type="button" onClick={() => { setCameraReady(false); setStep(1) }} className="min-h-11 w-full rounded border border-slate-300 bg-white text-sm font-medium text-slate-700">
+            Change train or crowd level
+          </button>
+
           <button
             type="button"
-            disabled={isCapturing || isAnalyzing}
+            disabled={isCapturing || !cameraReady}
             onClick={handleCapturePhoto}
             className="w-full rounded bg-slate-900 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60 text-center shadow-xs"
           >
-            {isCapturing || isAnalyzing ? 'Analyzing coach density...' : 'Capture and analyze photo'}
+            {isCapturing ? 'Capturing photo...' : cameraReady ? 'Capture photo' : 'Starting camera...'}
           </button>
+          {cameraError && <p role="alert" className="text-sm text-red-700">{cameraError}</p>}
+          {cameraError && (
+            <button type="button" onClick={() => setStep(1)} className="min-h-11 w-full rounded border border-slate-300 text-sm text-slate-700">
+              Back and try again
+            </button>
+          )}
         </div>
       )}
 
@@ -547,105 +448,22 @@ function ReportWizard() {
         <div className="border border-slate-300 bg-white p-5 rounded space-y-4">
           <div className="border border-slate-200 bg-slate-50 p-3 rounded text-center">
             <h3 className="text-sm font-bold text-slate-900">
-              {matchResult === 'agree' ? '✓ Photo Verification Confirmed' : 'Different Result'}
+              Photo captured
             </h3>
             <p className="text-xs text-slate-600 mt-0.5">
-              {matchResult === 'agree'
-                ? 'Your report matches the automated coach density analysis.'
-                : 'The camera estimate differs slightly. You can confirm your answer below.'}
+              Photo analysis is unavailable. Your self-reported crowd level will be saved as unverified.
             </p>
           </div>
 
-          {/* Density Analysis Breakdown Card */}
-          {analysisMetrics && (
-            <div className="rounded border border-slate-200 bg-slate-50 p-3.5 space-y-3 text-xs">
-              <div className="flex items-center justify-between border-b border-slate-200 pb-2">
-                <span className="font-bold text-slate-800">AI Photo Density Analysis</span>
-                <span className="rounded bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800">
-                  96% Confidence
-                </span>
-              </div>
-
-              {/* Density Bar */}
-              <div>
-                <div className="flex justify-between text-[11px] font-semibold text-slate-700 mb-1">
-                  <span>Coach Density Score</span>
-                  <span>{analysisMetrics.crowdDensityScore}%</span>
-                </div>
-                <div className="h-2 w-full rounded-full bg-slate-200 overflow-hidden">
-                  <div
-                    className={`h-full transition-all ${
-                      (analysisMetrics.crowdDensityScore || 0) < 35
-                        ? 'bg-green-600'
-                        : (analysisMetrics.crowdDensityScore || 0) < 70
-                        ? 'bg-amber-500'
-                        : 'bg-red-600'
-                    }`}
-                    style={{ width: `${analysisMetrics.crowdDensityScore}%` }}
-                  />
-                </div>
-              </div>
-
-              {/* Metrics Grid */}
-              <div className="grid grid-cols-2 gap-2 text-[11px]">
-                <div className="border border-slate-200 bg-white p-2 rounded">
-                  <span className="text-slate-500 block text-[10px]">Aisle Gangway</span>
-                  <span className="font-bold text-slate-900">{analysisMetrics.aisleCongestion}</span>
-                </div>
-                <div className="border border-slate-200 bg-white p-2 rounded">
-                  <span className="text-slate-500 block text-[10px]">Doorway Flow</span>
-                  <span className="font-bold text-slate-900">{analysisMetrics.doorwayStatus}</span>
-                </div>
-              </div>
-
-              {/* Observations */}
-              {analysisMetrics.aiObservations && analysisMetrics.aiObservations.length > 0 && (
-                <div className="space-y-1 text-[11px] text-slate-600 border-t border-slate-200 pt-2">
-                  <div className="font-bold text-slate-700">Observations:</div>
-                  {analysisMetrics.aiObservations.map((obs, idx) => (
-                    <div key={idx} className="flex items-center gap-1.5">
-                      <span className="text-emerald-700">✓</span>
-                      <span>{obs}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* User vs Photo Selection */}
-          <div className="grid grid-cols-2 gap-3">
-            <div
-              onClick={() => setFinalLevel(selectedLevel || 1)}
-              className={`border p-3 rounded text-center cursor-pointer ${
-                finalLevel === selectedLevel ? 'border-slate-900 bg-slate-100 font-bold ring-1 ring-slate-900' : 'border-slate-300'
-              }`}
-            >
-              <div className="text-[10px] font-bold text-slate-500 uppercase">Your Selection</div>
-              <div className="text-sm font-bold text-slate-900 mt-1">
-                {CROWD_LABELS[selectedLevel || 1]}
-              </div>
-            </div>
-
-            <div
-              onClick={() => setFinalLevel(photoEstimatedLevel)}
-              className={`border p-3 rounded text-center cursor-pointer ${
-                finalLevel === photoEstimatedLevel ? 'border-slate-900 bg-slate-100 font-bold ring-1 ring-slate-900' : 'border-slate-300'
-              }`}
-            >
-              <div className="text-[10px] font-bold text-slate-500 uppercase">Vision Estimate</div>
-              <div className="text-sm font-bold text-slate-900 mt-1">
-                {CROWD_LABELS[photoEstimatedLevel]}
-              </div>
-            </div>
-          </div>
+          {capturedImage && <Image src={capturedImage} alt="Your captured report photo" width={640} height={480} unoptimized className="mx-auto max-h-64 w-auto rounded object-contain" />}
 
           <div className="text-[11px] text-slate-500 text-center flex items-center justify-center gap-1">
-            <span>🛡️</span>
-            <span>Image analyzed in memory and immediately discarded. Zero photos stored.</span>
+            <span aria-hidden="true">•</span>
+            <span>Photo stays on this device. It is not uploaded, analyzed, or saved with your report.</span>
           </div>
 
           <div className="space-y-2 pt-1">
+            {submitError && <p role="alert" className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{submitError}</p>}
             <button
               type="button"
               disabled={isSubmitting}
@@ -655,7 +473,7 @@ function ReportWizard() {
               {isSubmitting ? (
                 <>
                   <span className="h-4 w-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
-                  <span>Submitting & Awarding Points...</span>
+                  <span>Saving report...</span>
                 </>
               ) : (
                 <span>Send report ({CROWD_LABELS[finalLevel]})</span>
@@ -665,10 +483,18 @@ function ReportWizard() {
             <button
               type="button"
               disabled={isSubmitting}
-              onClick={() => setStep(2)}
+              onClick={() => { setCameraReady(false); setStep(2) }}
               className="w-full rounded border border-slate-300 bg-slate-50 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 text-center"
             >
               Retake photo
+            </button>
+            <button
+              type="button"
+              disabled={isSubmitting}
+              onClick={() => { setCapturedImage(null); setCameraReady(false); setStep(1) }}
+              className="w-full min-h-11 text-xs font-medium text-slate-600 underline underline-offset-2 disabled:opacity-50"
+            >
+              Change crowd level
             </button>
           </div>
         </div>
@@ -681,17 +507,13 @@ function ReportWizard() {
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 text-2xl font-bold">
             ✓
           </div>
-          <h2 className="text-xl font-bold text-slate-900">Report Verified & Counted!</h2>
+          <h2 className="text-xl font-bold text-slate-900">Report sent</h2>
           <p className="text-xs text-slate-700 max-w-sm mx-auto leading-relaxed">
-            Your camera-verified report has been blended into the live crowd map and counted toward your commuter profile.
+            Your self-reported crowd level was saved. It is unverified because photo analysis is unavailable.
           </p>
 
           <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3 max-w-xs mx-auto text-xs space-y-1">
-            <div className="flex items-center justify-between font-bold text-emerald-950">
-              <span>Points Earned:</span>
-              <span className="rounded bg-emerald-600 px-2 py-0.5 text-white text-[11px]">+15 Karma</span>
-            </div>
-            <div className="flex items-center justify-between text-slate-600 text-[11px] pt-1 border-t border-emerald-100">
+            <div className="flex items-center justify-between text-slate-600 text-[11px]">
               <span>Crowd Level:</span>
               <span className="font-bold text-slate-900">{CROWD_LABELS[finalLevel]}</span>
             </div>

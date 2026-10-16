@@ -7,10 +7,11 @@ import { createClient } from '@supabase/supabase-js'
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? ''
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ''
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.warn(
-    '[Thirakku] Missing Supabase env vars. Copy .env.local.example → .env.local and fill in your keys.'
-  )
-}
+export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey)
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+// Keep imports safe in local preview builds. Auth and data writes are disabled
+// until real project credentials are provided.
+export const supabase = createClient(
+  supabaseUrl || 'https://placeholder.supabase.co',
+  supabaseAnonKey || 'placeholder-anon-key'
+)

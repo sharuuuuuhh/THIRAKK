@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import React from 'react'
 import Link from 'next/link'
 
 export default function OnTrainModePage() {
@@ -17,23 +17,23 @@ export default function OnTrainModePage() {
   return (
     <div className="mx-auto max-w-2xl px-4 py-8 space-y-6 text-slate-900">
       <div className="border border-slate-300 bg-white p-4 rounded text-xs text-slate-800">
-        <strong>Passive Sensing:</strong> On-train mode matches a commuter&apos;s phone to an active train run using speed and timetable proximity while the page is open.
+        <strong>Prototype preview:</strong> This page does not read GPS, match a live train, or send an occupancy signal.
       </div>
 
       <div className="border border-slate-300 bg-white p-6 rounded">
         <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
-          Passive Sensing Prototype
+          Sample simulation
         </span>
         <h1 className="text-xl sm:text-2xl font-bold">On-Train Commuter Mode</h1>
         <p className="text-xs text-slate-600 mt-1">
-          Keep this screen open during your journey to anonymously signal occupancy.
+          Example train details below are static demo content. No background tracking is performed.
         </p>
       </div>
 
       <div className="border border-slate-300 bg-white p-5 rounded space-y-4">
         <div className="flex items-center justify-between border-b border-slate-200 pb-2">
-          <span className="text-xs font-bold text-slate-900">Matched Active Train</span>
-          <span className="text-xs font-semibold text-slate-600">{matchedTrain.speed}</span>
+          <span className="text-xs font-bold text-slate-900">Sample train run</span>
+          <span className="text-xs font-semibold text-slate-600">Demo only</span>
         </div>
 
         <div className="border border-slate-200 bg-slate-50 p-4 rounded space-y-2 text-xs">
@@ -54,9 +54,9 @@ export default function OnTrainModePage() {
 
           <div className="border-t border-slate-200 pt-2 flex items-center justify-between">
             <span>
-              <strong>{matchedTrain.activeUsersAboard} commuters</strong> currently on this train
+              <strong>{matchedTrain.activeUsersAboard} sample users</strong> in this illustration
             </span>
-            <span className="font-bold text-slate-700">Soft Signal Logged</span>
+            <span className="font-bold text-slate-700">Not recorded</span>
           </div>
         </div>
 

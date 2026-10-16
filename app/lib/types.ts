@@ -125,6 +125,7 @@ export interface StretchCrowd {
   report_count: number
   photo_count: number
   volunteer_count: number
+  is_sample: boolean
   label: string             // e.g. "Packed"
 }
 
