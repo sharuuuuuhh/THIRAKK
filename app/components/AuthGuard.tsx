@@ -9,7 +9,22 @@ import { useLanguage } from '@/lib/language-context'
 import { getSafeAuthDestination } from '@/lib/auth-redirect'
 
 // Paths accessible without authentication
-const PUBLIC_PATHS = ['/', '/auth/login', '/auth/signup', '/auth/forgot-password', '/auth/reset-password', '/auth/callback', '/privacy', '/terms']
+const PUBLIC_PATHS = [
+  '/',
+  '/auth/login',
+  '/auth/signup',
+  '/auth/forgot-password',
+  '/auth/reset-password',
+  '/auth/callback',
+  '/privacy',
+  '/terms',
+  '/better-option',
+  '/petitions',
+  '/explore',
+  '/on-train',
+  '/camera-lookahead',
+  '/volunteer',
+]
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth()
