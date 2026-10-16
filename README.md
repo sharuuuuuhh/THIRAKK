@@ -1,6 +1,10 @@
-# Thirakku (തിരക്ക്)
+# THIRAKKU (തിരക്ക്)
 
 Thirakku is a bilingual, mobile-first prototype for sharing crowd reports on Kerala train routes. It helps commuters view recent passenger reports and submit their own. Reports are unverified and should be treated as indicative, not as official railway information or safety advice.
+
+Built for **INNOVUS Season 3**, hosted by the **CSE Association at the College of Engineering Thalassery**, under the theme **Code 4 Change**.
+
+**Live prototype:** [thirakk.vercel.app](https://thirakk.vercel.app)
 
 ## What the prototype does
 
